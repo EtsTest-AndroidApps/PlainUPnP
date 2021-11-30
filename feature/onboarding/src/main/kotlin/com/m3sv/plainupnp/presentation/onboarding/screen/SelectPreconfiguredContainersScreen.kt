@@ -2,38 +2,38 @@ package com.m3sv.plainupnp.presentation.onboarding.screen
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Switch
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.m3sv.plainupnp.compose.OneContainedButton
-import com.m3sv.plainupnp.compose.OnePane
-import com.m3sv.plainupnp.compose.OneSubtitle
-import com.m3sv.plainupnp.compose.OneTitle
-import com.m3sv.plainupnp.compose.OneToolbar
+import com.m3sv.plainupnp.compose.*
 import com.m3sv.plainupnp.presentation.onboarding.R
+
+data class ContainerState(val imagesEnabled: Boolean, val videoEnabled: Boolean, val audioEnabled: Boolean) {
+    companion object {
+        fun empty() = ContainerState(imagesEnabled = false, audioEnabled = false, videoEnabled = false)
+    }
+}
+
+interface ContainerSwitchCallbacks {
+    fun onImageSwitch()
+    fun onVideoSwitch()
+    fun onAudioSwitch()
+}
 
 @Composable
 fun SelectPreconfiguredContainersScreen(
+    containerState: ContainerState,
+    containersCallback: ContainerSwitchCallbacks,
     onBackClick: () -> Unit,
     onNextClick: () -> Unit,
-    audioEnabled: MutableState<Boolean>,
-    videoEnabled: MutableState<Boolean>,
-    imageEnabled: MutableState<Boolean>,
 ) {
     OnePane(viewingContent = {
         OneTitle(text = stringResource(id = R.string.select_precofigured_containers_title))
@@ -52,23 +52,22 @@ fun SelectPreconfiguredContainersScreen(
             )
 
             SwitchRow(
-                checkedState = imageEnabled,
+                isChecked = containerState.imagesEnabled,
                 title = stringResource(id = R.string.images),
-            ) {
-
-            }
-
-            SwitchRow(
-                checkedState = videoEnabled,
-                title = stringResource(R.string.videos)
-            ) {
-
-            }
+                onSwitch = containersCallback::onImageSwitch
+            )
 
             SwitchRow(
-                checkedState = audioEnabled,
-                title = stringResource(R.string.audio)
-            ) {}
+                isChecked = containerState.videoEnabled,
+                title = stringResource(R.string.videos),
+                onSwitch = containersCallback::onVideoSwitch
+            )
+
+            SwitchRow(
+                isChecked = containerState.audioEnabled,
+                title = stringResource(R.string.audio),
+                onSwitch = containersCallback::onAudioSwitch
+            )
 
             Spacer(modifier = Modifier.weight(1f))
 
@@ -90,22 +89,14 @@ fun SelectPreconfiguredContainersScreen(
 @Composable
 private fun SwitchRow(
     title: String,
-    checkedState: MutableState<Boolean>,
+    isChecked: Boolean,
     icon: Painter? = null,
-    onSwitch: (Boolean) -> Unit,
+    onSwitch: () -> Unit,
 ) {
-
-    fun flipSwitch() {
-        checkedState.value = !checkedState.value
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {
-                flipSwitch()
-                onSwitch(checkedState.value)
-            }
+            .clickable(onClick = onSwitch)
             .padding(vertical = 12.dp, horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -120,10 +111,7 @@ private fun SwitchRow(
         Row(Modifier.padding(start = if (icon != null) 16.dp else 4.dp)) {
             Text(title)
             Spacer(modifier = Modifier.weight(1f))
-            Switch(checked = checkedState.value, onCheckedChange = {
-                checkedState.value = it
-                onSwitch(it)
-            })
+            Switch(checked = isChecked, null)
         }
     }
 }

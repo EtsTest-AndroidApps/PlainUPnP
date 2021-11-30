@@ -3,7 +3,6 @@ package com.m3sv.plainupnp.presentation.onboarding
 import android.Manifest.permission.READ_EXTERNAL_STORAGE
 import android.app.Application
 import android.content.pm.PackageManager
-import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,14 +13,9 @@ import com.m3sv.plainupnp.common.preferences.PreferencesRepository
 import com.m3sv.plainupnp.common.util.asApplicationMode
 import com.m3sv.plainupnp.common.util.pass
 import com.m3sv.plainupnp.data.upnp.UriWrapper
+import com.m3sv.plainupnp.presentation.onboarding.screen.ContainerState
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.scan
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -40,11 +34,8 @@ class OnboardingViewModel @Inject constructor(
     private val preferences: PreferencesRepository,
 ) : ViewModel() {
 
-    val imageContainerEnabled = mutableStateOf(false)
-    val audioContainerEnabled = mutableStateOf(false)
-    val videoContainerEnabled = mutableStateOf(false)
-
-    val pauseInBackground = mutableStateOf(preferences.pauseInBackground)
+    private val _containerState: MutableStateFlow<ContainerState> = MutableStateFlow(ContainerState.empty())
+    val containerState: StateFlow<ContainerState> = _containerState
 
     val contentUris: StateFlow<List<UriWrapper>> = preferences
         .persistedUrisFlow()
@@ -56,15 +47,17 @@ class OnboardingViewModel @Inject constructor(
     val activityNotFound = _activityNotFound.asStateFlow()
 
     private val _currentScreen: MutableSharedFlow<Direction> = MutableSharedFlow()
+
     val currentScreen: StateFlow<OnboardingScreen> =
         _currentScreen.scan(OnboardingScreen.Greeting) { currentScreen, direction ->
             if (direction == Direction.FORWARD) {
                 when (currentScreen) {
                     OnboardingScreen.SelectPreconfiguredContainers -> {
                         with(preferences) {
-                            setShareImages(imageContainerEnabled.value)
-                            setShareVideos(videoContainerEnabled.value)
-                            setShareAudio(audioContainerEnabled.value)
+                            val (imagesEnabled, videosEnabled, audioEnabled) = _containerState.value
+                            setShareImages(imagesEnabled)
+                            setShareVideos(videosEnabled)
+                            setShareAudio(audioEnabled)
                         }
                     }
                     else -> pass
@@ -155,6 +148,28 @@ class OnboardingViewModel @Inject constructor(
         application,
         STORAGE_PERMISSION
     ) == PackageManager.PERMISSION_GRANTED
+
+    fun onImageSwitch() {
+        updateContainersState { previousState ->
+            previousState.copy(imagesEnabled = !previousState.imagesEnabled)
+        }
+    }
+
+    fun onVideoSwitch() {
+        updateContainersState { previousState ->
+            previousState.copy(videoEnabled = !previousState.videoEnabled)
+        }
+    }
+
+    fun onAudioSwitch() {
+        updateContainersState { previousState ->
+            previousState.copy(audioEnabled = !previousState.audioEnabled)
+        }
+    }
+
+    private fun updateContainersState(block: (previousState: ContainerState) -> ContainerState) {
+        _containerState.value = block(_containerState.value)
+    }
 
     companion object {
         const val STORAGE_PERMISSION = READ_EXTERNAL_STORAGE

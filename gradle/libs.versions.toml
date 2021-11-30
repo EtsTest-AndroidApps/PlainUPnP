@@ -1,7 +1,7 @@
 [versions]
 accompanist = "0.10.0"
 cling = "2.2.0"
-compose = "1.0.2"
+compose = "1.0.5"
 coroutines = "1.5.0"
 hilt = "2.38.1"
 jetty = "8.1.8.v20121106"
@@ -21,7 +21,7 @@ androidx-lifecycle-ktx-runtime = { module = "androidx.lifecycle:lifecycle-runtim
 androidx-lifecycle-ktx-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
 cling-core = { module = "com.github.m3sv.cling:cling-core", version.ref = "cling" }
 cling-support = { module = "com.github.m3sv.cling:cling-support", version.ref = "cling" }
-compose-activity = "androidx.activity:activity-compose:1.3.0-beta01"
+compose-activity = "androidx.activity:activity-compose:1.4.0"
 compose-foundation-core = { module = "androidx.compose.foundation:foundation", version.ref = "compose" }
 compose-foundation-layout = { module = "androidx.compose.foundation:foundation-layout", version.ref = "compose" }
 compose-material-core = { module = "androidx.compose.material:material", version.ref = "compose" }

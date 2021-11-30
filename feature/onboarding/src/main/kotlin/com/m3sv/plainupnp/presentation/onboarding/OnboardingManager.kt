@@ -1,9 +1,9 @@
 package com.m3sv.plainupnp.presentation.onboarding
 
 import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
-import com.m3sv.plainupnp.presentation.onboarding.activity.OnboardingActivity
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
 class OnboardingManager(
@@ -13,9 +13,11 @@ class OnboardingManager(
     val isOnboardingCompleted
         get() = preferencesRepository.preferences.value.finishedOnboarding
 
-    fun completeOnboarding(activity: OnboardingActivity) {
-        GlobalScope.launch { preferencesRepository.finishOnboarding() }
-        onboardingCompletedListener(activity)
-        activity.finish()
+    fun completeOnboarding(activity: ComponentActivity) {
+        activity.lifecycleScope.launch {
+            preferencesRepository.finishOnboarding()
+            onboardingCompletedListener(activity)
+            activity.finish()
+        }
     }
 }

@@ -1,10 +1,11 @@
 package com.m3sv.plainupnp.presentation.onboarding.activity
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.Crossfade
 import androidx.compose.material.Surface
@@ -46,13 +47,21 @@ class ConfigureFolderActivity : ComponentActivity() {
             val activityNotFound: ActivityNotFoundIndicatorState by viewModel.activityNotFound.collectAsState()
             val lifecycleState: LifecycleState by lifecycleManager.lifecycleState.collectAsState()
 
+            val pickDirectoryLauncher =
+                rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocumentTree()) { uri ->
+                    if (uri != null) {
+                        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        viewModel.saveUri()
+                    }
+                }
+
             AppTheme(theme.isDarkTheme()) {
                 Surface {
                     SelectFoldersScreen(
                         contentUris = contentUris,
-                        selectDirectory = { openDirectory() },
-                        onReleaseUri = { viewModel.releaseUri(it) },
-                        onBackClick = { finish() }
+                        selectDirectory = { pickDirectoryLauncher.launch(null) },
+                        onReleaseUri = viewModel::releaseUri,
+                        onBackClick = ::finish
                     )
 
                     LifecycleIndicator(lifecycleState = lifecycleState, ::finishApp)
@@ -60,9 +69,7 @@ class ConfigureFolderActivity : ComponentActivity() {
                     Crossfade(targetState = activityNotFound) { state ->
                         when (state) {
                             ActivityNotFoundIndicatorState.SHOW -> FadedBackground {
-                                ActivityNotFoundIndicator {
-                                    viewModel.dismissActivityNotFound()
-                                }
+                                ActivityNotFoundIndicator { viewModel.dismissActivityNotFound() }
                             }
                             ActivityNotFoundIndicatorState.DISMISS -> pass
                         }
@@ -70,37 +77,5 @@ class ConfigureFolderActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    private fun openDirectory() {
-        runCatching {// Choose a directory using the system's file picker.
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                // Provide read access to files and sub-directories in the user-selected
-                // directory.
-                flags = DIRECTORY_PERMISSIONS
-            }
-
-            startActivityForResult(intent, REQUEST_DIRECTORY_CODE)
-        }.onFailure { viewModel.onActivityNotFound() }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        when (requestCode) {
-            REQUEST_DIRECTORY_CODE -> {
-                if (resultCode == Activity.RESULT_OK) {
-                    data?.data?.also { uri ->
-                        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        viewModel.saveUri()
-                    }
-                }
-            }
-        }
-    }
-
-    companion object {
-        private const val REQUEST_DIRECTORY_CODE = 12
-        private const val DIRECTORY_PERMISSIONS =
-            Intent.FLAG_GRANT_READ_URI_PERMISSION and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
     }
 }

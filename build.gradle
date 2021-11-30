@@ -1,8 +1,8 @@
 buildscript {
     ext.buildConfig = [
-            'compileSdk': 30,
+            'compileSdk': 31,
             'minSdk'    : 21,
-            'targetSdk' : 30,
+            'targetSdk' : 31,
             'buildTools': '30.0.3',
             'version'   : [
                     'code': 75,
@@ -19,9 +19,9 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:7.0.2'
+        classpath 'com.android.tools.build:gradle:7.0.3'
         classpath(libs.gradle.plugin.sqldelight)
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.5.21'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.5.31'
         classpath(libs.gradle.plugin.hilt)
         classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.17'
         if (isPlayStoreBuild) {
