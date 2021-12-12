@@ -34,12 +34,13 @@ inline fun ContentResolver.queryImages(
 
         while (cursor.moveToNext()) {
             val id =
-                UpnpContentRepositoryImpl.IMAGE_PREFIX + (imagesIdColumn.ifExists(cursor::getLongOrNull) ?: continue)
-            val mime = imagesMimeTypeColumn.ifExists(cursor::getStringOrNull) ?: continue
-            val title = imagesTitleColumn.ifExists(cursor::getStringOrNull) ?: "-"
-            val size = imagesMediaSizeColumn.ifExists(cursor::getLongOrNull) ?: 0L
-            val height = imagesHeightColumn.ifExists(cursor::getLongOrNull) ?: 0L
-            val width = imagesWidthColumn.ifExists(cursor::getLongOrNull) ?: 0L
+                UpnpContentRepositoryImpl.IMAGE_PREFIX + (imagesIdColumn.returnIfExists(cursor::getLongOrNull)
+                    ?: continue)
+            val mime = imagesMimeTypeColumn.returnIfExists(cursor::getStringOrNull) ?: continue
+            val title = imagesTitleColumn.returnIfExists(cursor::getStringOrNull) ?: "-"
+            val size = imagesMediaSizeColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
+            val height = imagesHeightColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
+            val width = imagesWidthColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
 
             block(id, title, mime, size, width, height)
         }
@@ -88,15 +89,15 @@ inline fun ContentResolver.queryVideos(
 
         while (cursor.moveToNext()) {
             val id = UpnpContentRepositoryImpl.VIDEO_PREFIX +
-                    (videoIdColumn.ifExists(cursor::getLongOrNull) ?: continue)
+                    (videoIdColumn.returnIfExists(cursor::getLongOrNull) ?: continue)
 
-            val mimeType = videoMimeTypeColumn.ifExists(cursor::getStringOrNull) ?: continue
-            val title = videoTitleColumn.ifExists(cursor::getStringOrNull) ?: "-"
-            val creator = videoArtistColumn.ifExists(cursor::getStringOrNull)
-            val size = videoSizeColumn.ifExists(cursor::getLongOrNull) ?: 0L
-            val videoDuration = videoDurationColumn.ifExists(cursor::getLongOrNull) ?: 0L
-            val videoHeight = videoHeightColumn.ifExists(cursor::getLongOrNull) ?: 0L
-            val videoWidth = videoWidthColumn.ifExists(cursor::getLongOrNull) ?: 0L
+            val mimeType = videoMimeTypeColumn.returnIfExists(cursor::getStringOrNull) ?: continue
+            val title = videoTitleColumn.returnIfExists(cursor::getStringOrNull) ?: "-"
+            val creator = videoArtistColumn.returnIfExists(cursor::getStringOrNull)
+            val size = videoSizeColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
+            val videoDuration = videoDurationColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
+            val videoHeight = videoHeightColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
+            val videoWidth = videoWidthColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
 
             block(id, title, creator, mimeType, size, videoDuration, videoWidth, videoHeight)
         }
@@ -114,7 +115,7 @@ val VIDEO_COLUMNS = arrayOf(
     MediaStore.Video.Media.WIDTH
 )
 
-inline fun <T> Int.ifExists(block: (Int) -> T): T? {
+inline fun <T> Int.returnIfExists(block: (Int) -> T): T? {
     if (this == -1)
         return null
 

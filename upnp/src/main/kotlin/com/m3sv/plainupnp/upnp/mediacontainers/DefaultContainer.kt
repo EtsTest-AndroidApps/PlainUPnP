@@ -22,11 +22,15 @@
  */
 package com.m3sv.plainupnp.upnp.mediacontainers
 
-class Container(
+class DefaultContainer(
     id: String,
     parentID: String?,
     title: String?,
     creator: String?
 ) : BaseContainer(id, parentID, title, creator) {
     override fun getChildCount(): Int = containers.size
+
+    override fun toString(): String {
+        return "[Default container: id $id, parentId $parentID, title $title"
+    }
 }

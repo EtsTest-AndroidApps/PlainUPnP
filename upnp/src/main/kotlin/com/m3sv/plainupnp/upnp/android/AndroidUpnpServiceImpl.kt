@@ -24,13 +24,7 @@ import org.fourthline.cling.binding.annotations.AnnotationLocalServiceBinder
 import org.fourthline.cling.controlpoint.ControlPoint
 import org.fourthline.cling.controlpoint.ControlPointImpl
 import org.fourthline.cling.model.DefaultServiceManager
-import org.fourthline.cling.model.meta.DeviceDetails
-import org.fourthline.cling.model.meta.DeviceIdentity
-import org.fourthline.cling.model.meta.Icon
-import org.fourthline.cling.model.meta.LocalDevice
-import org.fourthline.cling.model.meta.LocalService
-import org.fourthline.cling.model.meta.ManufacturerDetails
-import org.fourthline.cling.model.meta.ModelDetails
+import org.fourthline.cling.model.meta.*
 import org.fourthline.cling.model.types.UDADeviceType
 import org.fourthline.cling.protocol.ProtocolFactory
 import org.fourthline.cling.protocol.ProtocolFactoryImpl
@@ -52,15 +46,12 @@ class AndroidUpnpServiceImpl @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
 ) : UpnpService {
 
+    private val _configuration = PlainUpnpServiceConfiguration()
     private val _protocolFactory: ProtocolFactory by lazy { ProtocolFactoryImpl(this) }
     private val _registry: Registry by lazy { RegistryImpl(this) }
-    private val _controlPoint: ControlPoint by lazy {
-        ControlPointImpl(configuration, _protocolFactory, _registry)
-    }
+    private val _controlPoint: ControlPoint by lazy { ControlPointImpl(_configuration, _protocolFactory, _registry) }
 
-    private val _configuration = PlainUpnpServiceConfiguration()
-
-    private val router: Router = AndroidRouter(configuration, _protocolFactory, application)
+    private val router: Router = AndroidRouter(_configuration, _protocolFactory, application)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 

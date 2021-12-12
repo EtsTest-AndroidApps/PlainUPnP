@@ -12,43 +12,22 @@ import com.m3sv.plainupnp.ContentModel
 import com.m3sv.plainupnp.ContentRepository
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
 import com.m3sv.plainupnp.logging.Logger
-import com.m3sv.plainupnp.upnp.mediacontainers.AlbumContainer
-import com.m3sv.plainupnp.upnp.mediacontainers.AllAudioContainer
-import com.m3sv.plainupnp.upnp.mediacontainers.AllImagesContainer
-import com.m3sv.plainupnp.upnp.mediacontainers.AllVideoContainer
-import com.m3sv.plainupnp.upnp.mediacontainers.ArtistContainer
-import com.m3sv.plainupnp.upnp.mediacontainers.AudioDirectoryContainer
-import com.m3sv.plainupnp.upnp.mediacontainers.BaseContainer
-import com.m3sv.plainupnp.upnp.mediacontainers.Container
-import com.m3sv.plainupnp.upnp.mediacontainers.ContentDirectory
-import com.m3sv.plainupnp.upnp.mediacontainers.ImageDirectoryContainer
-import com.m3sv.plainupnp.upnp.mediacontainers.VideoDirectoryContainer
-import com.m3sv.plainupnp.upnp.util.PORT
-import com.m3sv.plainupnp.upnp.util.addAudioItem
-import com.m3sv.plainupnp.upnp.util.addImageItem
-import com.m3sv.plainupnp.upnp.util.addVideoItem
-import com.m3sv.plainupnp.upnp.util.getLocalIpAddress
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
+import com.m3sv.plainupnp.upnp.mediacontainers.*
+import com.m3sv.plainupnp.upnp.util.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import java.io.File
 import java.security.SecureRandom
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
 
-typealias ContentCache = MutableMap<Long, BaseContainer>
-
 sealed class ContentUpdateState {
     object Loading : ContentUpdateState()
-    data class Ready(val data: ContentCache) : ContentUpdateState()
+    object Ready : ContentUpdateState()
 }
 
 @Singleton
@@ -58,32 +37,22 @@ class UpnpContentRepositoryImpl @Inject constructor(
     private val logger: Logger
 ) : ContentRepository {
 
-    val containerCache: MutableMap<Long, BaseContainer> = mutableMapOf()
+    var containerCache: Map<Long, BaseContainer> = emptyMap()
     private val allCache: MutableMap<Long, ContentModel> = mutableMapOf()
     override val contentCache: Map<Long, ContentModel> = allCache
 
     private val scope = CoroutineScope(Dispatchers.IO)
+
     private val appName by lazy { application.getString(R.string.app_name) }
     private val localIpAddress by lazy { getLocalIpAddress(application, logger).hostAddress }
-    private val baseUrl: String
-        get() = "$localIpAddress:$PORT"
-
-    private val refreshInternal = MutableSharedFlow<Unit>()
+    private val baseUrl: String by lazy { "$localIpAddress:$PORT" }
 
     private val _refreshState: MutableStateFlow<ContentUpdateState> =
-        MutableStateFlow(ContentUpdateState.Ready(containerCache))
+        MutableStateFlow(ContentUpdateState.Ready)
 
     val refreshState: Flow<ContentUpdateState> = _refreshState
 
     init {
-        scope.launch {
-            refreshInternal.onEach {
-                _refreshState.value = ContentUpdateState.Loading
-                refreshInternal()
-                _refreshState.value = ContentUpdateState.Ready(containerCache)
-            }.collect()
-        }
-
         scope.launch {
             preferencesRepository
                 .updateFlow
@@ -93,7 +62,11 @@ class UpnpContentRepositoryImpl @Inject constructor(
     }
 
     override fun refreshContent() {
-        scope.launch { refreshInternal.emit(Unit) }
+        scope.launch {
+            _refreshState.value = ContentUpdateState.Loading
+            refreshInternal()
+            _refreshState.value = ContentUpdateState.Ready
+        }
     }
 
     private val init by lazy {
@@ -106,42 +79,57 @@ class UpnpContentRepositoryImpl @Inject constructor(
         init
     }
 
-    private suspend fun refreshInternal() = coroutineScope {
-        containerCache.clear()
+    private suspend fun refreshInternal() {
+        val result: MutableMap<Long, BaseContainer> = mutableMapOf()
+        val contentResolver = application.contentResolver
 
-        val rootContainer = createRootContainer().also { container -> container.addToRegistry() }
+        val rootContainer = DefaultContainer(
+            ROOT_ID.toString(),
+            ROOT_ID.toString(),
+            appName,
+            appName
+        ).also { container -> result[container.rawId.toLong()] = container }
 
-        preferencesRepository.preferences.value.let { preferences ->
+        val preferences = preferencesRepository.preferences.value
+
+        coroutineScope {
             if (preferences.enableImages) {
                 launch {
-                    getRootImagesContainer()
-                        .also(rootContainer::addContainer)
-                        .addToRegistry()
+                    val (imageContainer, containers) = getRootImagesContainer(contentResolver)
+                    rootContainer.addContainer(imageContainer)
+                    containers.forEach { container -> result[container.rawId.toLong()] = container }
                 }
             }
 
             if (preferences.enableAudio) {
                 launch {
-                    getRootAudioContainer(rootContainer).addToRegistry()
+                    val (audioContainer, containers) = getRootAudioContainer(contentResolver)
+                    rootContainer.addContainer(audioContainer)
+                    containers.forEach { container -> result[container.rawId.toLong()] = container }
                 }
             }
 
             if (preferences.enableVideos) {
                 launch {
-                    getRootVideoContainer(rootContainer).addToRegistry()
+                    val (videoContainer, containers) = getRootVideoContainer(contentResolver)
+                    rootContainer.addContainer(videoContainer)
+                    containers.forEach { container -> result[container.rawId.toLong()] = container }
+                }
+            }
+
+            launch {
+                val pairs = getUserSelectedContainer(rootContainer)
+
+                pairs.forEach { (userSelectedContainer, userSelectedContainers) ->
+                    result[userSelectedContainer.rawId.toLong()] = userSelectedContainer
+                    rootContainer.addContainer(userSelectedContainer)
+                    userSelectedContainers.forEach { container -> result[container.rawId.toLong()] = container }
                 }
             }
         }
 
-        launch { getUserSelectedContainer(rootContainer) }
+        containerCache = result
     }
-
-    private fun createRootContainer() = Container(
-        ROOT_ID.toString(),
-        ROOT_ID.toString(),
-        appName,
-        appName
-    )
 
     fun getAudioContainerForAlbum(
         albumId: String,
@@ -171,129 +159,126 @@ class UpnpContentRepositoryImpl @Inject constructor(
         artistId = artistId
     )
 
-    private fun BaseContainer.addToRegistry() {
-        containerCache[rawId.toLong()] = this
-    }
-
-    private fun getRootImagesContainer(): BaseContainer {
-        val rootContainer = Container(
+    private fun getRootImagesContainer(contentResolver: ContentResolver): Pair<DefaultContainer, List<BaseContainer>> {
+        val rootImageContainer = DefaultContainer(
             IMAGE_ID.toString(),
             ROOT_ID.toString(),
             application.getString(R.string.images),
             appName
         )
 
-        AllImagesContainer(
+        val containers = mutableListOf<BaseContainer>(rootImageContainer)
+
+        val allImagesContainer = AllImagesContainer(
             id = ALL_IMAGE.toString(),
             parentID = IMAGE_ID.toString(),
             title = application.getString(R.string.all),
             creator = appName,
             baseUrl = baseUrl,
             contentResolver = application.contentResolver
-        ).also { container ->
-            rootContainer.addContainer(container)
-            container.addToRegistry()
-        }
+        )
+        containers.add(allImagesContainer)
+        rootImageContainer.addContainer(allImagesContainer)
 
-        Container(
+        val byFolderContainer = DefaultContainer(
             IMAGE_BY_FOLDER.toString(),
-            rootContainer.id,
+            rootImageContainer.id,
             application.getString(R.string.by_folder),
             appName
-        ).also { container ->
-            rootContainer.addContainer(container)
-            container.addToRegistry()
-
+        ).also { byFolderContainer ->
             val column = ImageDirectoryContainer.IMAGE_DATA_PATH
             val externalContentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-
             generateContainerStructure(
-                column,
-                container,
-                externalContentUri
-            ) { id, parentID, title, creator, baseUrl, contentDirectory, contentResolver ->
-                ImageDirectoryContainer(
-                    id = id,
-                    parentID = parentID,
-                    title = title,
-                    creator = creator,
-                    baseUrl = baseUrl,
-                    directory = contentDirectory,
-                    contentResolver = contentResolver
-                )
-            }
+                column = column,
+                parentContainer = byFolderContainer,
+                externalContentUri = externalContentUri,
+                contentResolver = contentResolver,
+                childContainerBuilder = { id, parentID, title, creator, baseUrl, contentDirectory ->
+                    ImageDirectoryContainer(
+                        id = id,
+                        parentID = parentID,
+                        title = title,
+                        creator = creator,
+                        baseUrl = baseUrl,
+                        directory = contentDirectory,
+                        contentResolver = contentResolver
+                    )
+                }, addToRegistry = containers::add
+            )
         }
 
-        return rootContainer
+        containers.add(byFolderContainer)
+        rootImageContainer.addContainer(byFolderContainer)
+
+        return rootImageContainer to containers
     }
 
-    private fun getRootAudioContainer(rootContainer: BaseContainer): BaseContainer =
-        Container(
+    private fun getRootAudioContainer(contentResolver: ContentResolver): Pair<DefaultContainer, List<BaseContainer>> {
+        val rootAudioContainer = DefaultContainer(
             AUDIO_ID.toString(),
             ROOT_ID.toString(),
             application.getString(R.string.audio),
             appName
-        ).apply {
-            rootContainer.addContainer(this)
+        )
 
-            AllAudioContainer(
-                ALL_AUDIO.toString(),
-                AUDIO_ID.toString(),
-                application.getString(R.string.all),
-                appName,
-                baseUrl = baseUrl,
-                contentResolver = application.contentResolver,
-                albumId = null,
-                artist = null
-            ).also { container ->
-                addContainer(container)
-                container.addToRegistry()
-            }
+        val containers = mutableListOf<BaseContainer>(rootAudioContainer)
 
-            ArtistContainer(
-                ALL_ARTISTS.toString(),
-                AUDIO_ID.toString(),
-                application.getString(R.string.artist),
-                appName,
-                logger,
-                baseUrl,
-                application.contentResolver
-            ).also { container ->
-                addContainer(container)
-                container.addToRegistry()
-            }
+        val allAudioContainer = AllAudioContainer(
+            ALL_AUDIO.toString(),
+            AUDIO_ID.toString(),
+            application.getString(R.string.all),
+            appName,
+            baseUrl = baseUrl,
+            contentResolver = application.contentResolver,
+            albumId = null,
+            artist = null
+        )
 
-            AlbumContainer(
-                id = ALL_ALBUMS.toString(),
-                parentID = AUDIO_ID.toString(),
-                title = application.getString(R.string.album),
-                creator = appName,
-                logger = logger,
-                baseUrl = baseUrl,
-                contentResolver = application.contentResolver,
-                artistId = null
-            ).also { container ->
-                addContainer(container)
-                container.addToRegistry()
-            }
+        rootAudioContainer.addContainer(allAudioContainer)
+        containers.add(allAudioContainer)
 
-            Container(
-                AUDIO_BY_FOLDER.toString(),
-                id,
-                application.getString(R.string.by_folder),
-                appName
-            ).also { container ->
-                addContainer(container)
-                container.addToRegistry()
+        val artistContainer = ArtistContainer(
+            ALL_ARTISTS.toString(),
+            AUDIO_ID.toString(),
+            application.getString(R.string.artist),
+            appName,
+            logger,
+            baseUrl,
+            application.contentResolver
+        )
 
-                val column = AudioDirectoryContainer.AUDIO_DATA_PATH
-                val externalContentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        rootAudioContainer.addContainer(artistContainer)
+        containers.add(artistContainer)
 
-                generateContainerStructure(
-                    column,
-                    container,
-                    externalContentUri
-                ) { id, parentID, title, creator, baseUrl, contentDirectory, contentResolver ->
+        val albumContainer = AlbumContainer(
+            id = ALL_ALBUMS.toString(),
+            parentID = AUDIO_ID.toString(),
+            title = application.getString(R.string.album),
+            creator = appName,
+            logger = logger,
+            baseUrl = baseUrl,
+            contentResolver = application.contentResolver,
+            artistId = null
+        )
+
+        rootAudioContainer.addContainer(albumContainer)
+        containers.add(albumContainer)
+
+        val byFolderContainer = DefaultContainer(
+            AUDIO_BY_FOLDER.toString(),
+            rootAudioContainer.id,
+            application.getString(R.string.by_folder),
+            appName
+        ).also { container ->
+            val column = AudioDirectoryContainer.AUDIO_DATA_PATH
+            val externalContentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+
+            generateContainerStructure(
+                contentResolver,
+                column,
+                container,
+                externalContentUri,
+                childContainerBuilder = { id, parentID, title, creator, baseUrl, contentDirectory ->
                     AudioDirectoryContainer(
                         id = id,
                         parentID = parentID,
@@ -303,48 +288,52 @@ class UpnpContentRepositoryImpl @Inject constructor(
                         directory = contentDirectory,
                         contentResolver = contentResolver
                     )
-                }
-            }
+                },
+                addToRegistry = containers::add
+            )
         }
 
-    private fun getRootVideoContainer(rootContainer: BaseContainer): BaseContainer =
-        Container(
+        rootAudioContainer.addContainer(byFolderContainer)
+        containers.add(byFolderContainer)
+        return rootAudioContainer to containers
+    }
+
+    private fun getRootVideoContainer(contentResolver: ContentResolver): Pair<BaseContainer, List<BaseContainer>> {
+        val rootVideoContainer = DefaultContainer(
             VIDEO_ID.toString(),
             ROOT_ID.toString(),
             application.getString(R.string.videos),
             appName
-        ).apply {
-            rootContainer.addContainer(this)
+        )
 
-            AllVideoContainer(
-                ALL_VIDEO.toString(),
-                VIDEO_ID.toString(),
-                application.getString(R.string.all),
-                appName,
-                baseUrl,
-                contentResolver = application.contentResolver
-            ).also { container ->
-                addContainer(container)
-                container.addToRegistry()
-            }
+        val containers = mutableListOf<BaseContainer>(rootVideoContainer)
+        val allVideoContainer = AllVideoContainer(
+            ALL_VIDEO.toString(),
+            VIDEO_ID.toString(),
+            application.getString(R.string.all),
+            appName,
+            baseUrl,
+            contentResolver = application.contentResolver
+        )
 
-            Container(
-                VIDEO_BY_FOLDER.toString(),
-                id,
-                application.getString(R.string.by_folder),
-                appName
-            ).also { container ->
-                addContainer(container)
-                container.addToRegistry()
+        rootVideoContainer.addContainer(allVideoContainer)
+        containers.add(allVideoContainer)
 
-                val column = VideoDirectoryContainer.VIDEO_DATA_PATH
-                val externalContentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        val videoByFolder = DefaultContainer(
+            VIDEO_BY_FOLDER.toString(),
+            rootVideoContainer.id,
+            application.getString(R.string.by_folder),
+            appName
+        ).also { container ->
+            val column = VideoDirectoryContainer.VIDEO_DATA_PATH
+            val externalContentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
 
-                generateContainerStructure(
-                    column,
-                    container,
-                    externalContentUri
-                ) { id, parentID, title, creator, baseUrl, contentDirectory, contentResolver ->
+            generateContainerStructure(
+                contentResolver,
+                column,
+                container,
+                externalContentUri,
+                childContainerBuilder = { id, parentID, title, creator, baseUrl, contentDirectory ->
                     VideoDirectoryContainer(
                         id = id,
                         parentID = parentID,
@@ -354,96 +343,105 @@ class UpnpContentRepositoryImpl @Inject constructor(
                         directory = contentDirectory,
                         contentResolver = contentResolver
                     )
-                }
-            }
+                },
+                addToRegistry = containers::add
+            )
         }
 
-    private suspend fun getUserSelectedContainer(rootContainer: Container) {
-        coroutineScope {
-            application
-                .contentResolver
-                .persistedUriPermissions
-                .forEach { urlPermission ->
-                    launch {
-                        val displayName = DocumentFile.fromTreeUri(application, urlPermission.uri)?.name
-                        val documentId = DocumentsContract.getTreeDocumentId(urlPermission.uri)
-                        val uri = DocumentsContract.buildChildDocumentsUriUsingTree(urlPermission.uri, documentId)
+        rootVideoContainer.addContainer(videoByFolder)
+        containers.add(videoByFolder)
+        return rootVideoContainer to containers
+    }
 
-                        if (uri != null && displayName != null) {
-                            queryUri(uri, rootContainer, displayName)
-                        }
+    private suspend fun getUserSelectedContainer(rootContainer: DefaultContainer) = coroutineScope {
+        application
+            .contentResolver
+            .persistedUriPermissions
+            .map { urlPermission ->
+                async {
+                    val displayName = DocumentFile.fromTreeUri(application, urlPermission.uri)?.name ?: ""
+                    val documentId = DocumentsContract.getTreeDocumentId(urlPermission.uri)
+                    val uri = DocumentsContract.buildChildDocumentsUriUsingTree(urlPermission.uri, documentId)
+
+                    if (uri != null) {
+                        queryUri(uri, rootContainer.rawId, displayName)
+                    } else {
+                        null
                     }
                 }
-        }
+            }
+            .awaitAll()
+            .filterNotNull()
     }
 
     private suspend fun queryUri(
         uri: Uri,
-        parentContainer: Container,
-        newContainerName: String
-    ) {
-        coroutineScope {
-            val newContainer = createContainer(randomId, parentId = parentContainer.rawId, newContainerName)
-            parentContainer.addContainer(newContainer)
-            newContainer.addToRegistry()
+        parentRawId: String,
+        newContainerName: String,
+    ): Pair<BaseContainer, List<BaseContainer>> = coroutineScope {
+        val newContainer = createContainer(randomId, parentId = parentRawId, newContainerName)
+        val containers = mutableListOf(newContainer)
+        val resolver = application.contentResolver
+        val childrenUri =
+            DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getDocumentId(uri))
 
-            val resolver = application.contentResolver
-            val childrenUri =
-                DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getDocumentId(uri))
+        resolver.query(
+            childrenUri,
+            mediaColumns,
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndex(mediaColumns[0])
+            val mimeColumn = cursor.getColumnIndex(mediaColumns[1])
+            val displayNameColumn = cursor.getColumnIndex(mediaColumns[2])
+            val sizeColumn = cursor.getColumnIndex(mediaColumns[3])
+            // Skip artist, we don't use it here for now
+            val albumArtistColumn = cursor.getColumnIndex(mediaColumns[5])
+            val albumColumn = cursor.getColumnIndex(mediaColumns[6])
 
-            resolver.query(
-                childrenUri,
-                mediaColumns,
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndex(mediaColumns[0])
-                val mimeColumn = cursor.getColumnIndex(mediaColumns[1])
-                val displayNameColumn = cursor.getColumnIndex(mediaColumns[2])
-                val sizeColumn = cursor.getColumnIndex(mediaColumns[3])
-                // Skip artist, we don't use it here for now
-                val albumArtistColumn = cursor.getColumnIndex(mediaColumns[5])
-                val albumColumn = cursor.getColumnIndex(mediaColumns[6])
+            while (cursor.moveToNext()) {
+                val id = idColumn.returnIfExists(cursor::getStringOrNull) ?: continue
+                val newDocumentUri = DocumentsContract.buildDocumentUriUsingTree(uri, id)
+                val mimeType = mimeColumn.returnIfExists(cursor::getStringOrNull) ?: continue
+                val displayName = displayNameColumn.returnIfExists(cursor::getStringOrNull) ?: "Unnamed"
+                val size = sizeColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
+                val albumArtist = albumArtistColumn.returnIfExists(cursor::getStringOrNull)
+                val album = albumArtistColumn.returnIfExists(cursor::getStringOrNull)
 
-                while (cursor.moveToNext()) {
-                    val id = idColumn.ifExists(cursor::getStringOrNull) ?: continue
-                    val newDocumentUri = DocumentsContract.buildDocumentUriUsingTree(uri, id)
-                    val mimeType = mimeColumn.ifExists(cursor::getStringOrNull) ?: continue
-                    val displayName = displayNameColumn.ifExists(cursor::getStringOrNull) ?: "Unnamed"
-                    val size = sizeColumn.ifExists(cursor::getLongOrNull) ?: 0L
-                    val albumArtist = albumArtistColumn.ifExists(cursor::getStringOrNull)
-                    val album = albumArtistColumn.ifExists(cursor::getStringOrNull)
+                when {
+                    mimeType == DocumentsContract.Document.MIME_TYPE_DIR -> launch {
+                        val (queryContainer, queryContainers) = queryUri(
+                            newDocumentUri,
+                            newContainer.rawId,
+                            displayName
+                        )
 
-                    when {
-                        mimeType == DocumentsContract.Document.MIME_TYPE_DIR -> launch {
-                            queryUri(
-                                newDocumentUri,
-                                newContainer,
-                                displayName
-                            )
-                        }
+                        newContainer.addContainer(queryContainer)
+                        containers.addAll(queryContainers)
+                    }
 
-                        mimeType != DocumentsContract.Document.MIME_TYPE_DIR && !mimeType.isNullOrBlank() -> {
-                            addFile(
-                                newContainer,
-                                newDocumentUri,
-                                displayName,
-                                mimeType,
-                                size,
-                                null,
-                                album,
-                                albumArtist
-                            )
-                        }
+                    mimeType != DocumentsContract.Document.MIME_TYPE_DIR && mimeType.isNotBlank() -> {
+                        addFile(
+                            newContainer,
+                            newDocumentUri,
+                            displayName,
+                            mimeType,
+                            size,
+                            null,
+                            album,
+                            albumArtist
+                        )
                     }
                 }
             }
         }
+
+        newContainer to containers
     }
 
     private fun addFile(
-        parentContainer: Container,
+        parentContainer: BaseContainer,
         uri: Uri,
         displayName: String,
         mime: String,
@@ -501,11 +499,14 @@ class UpnpContentRepositoryImpl @Inject constructor(
         id: Long,
         parentId: String,
         name: String?,
-    ) = Container(id.toString(), parentId, "${USER_DEFINED_PREFIX}$name", null)
+    ): BaseContainer = DefaultContainer(id.toString(), parentId, "${USER_DEFINED_PREFIX}$name", null)
+
+    private fun splitBySeparator(value: String): List<String> = value.split(File.separator)
 
     private fun generateContainerStructure(
+        contentResolver: ContentResolver,
         column: String,
-        rootContainer: BaseContainer,
+        parentContainer: BaseContainer,
         externalContentUri: Uri,
         childContainerBuilder: (
             id: String,
@@ -514,71 +515,77 @@ class UpnpContentRepositoryImpl @Inject constructor(
             creator: String,
             baseUrl: String,
             contentDirectory: ContentDirectory,
-            contentResolver: ContentResolver,
         ) -> BaseContainer,
+        addToRegistry: (BaseContainer) -> Unit
     ) {
         val folders: MutableMap<String, Map<String, Any>> = mutableMapOf()
-        buildSet {
-            application.contentResolver.query(
-                externalContentUri,
-                arrayOf(column),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val pathColumn = cursor.getColumnIndex(column)
+        buildContentUriSet(contentResolver, externalContentUri, column)
+            .map(::splitBySeparator)
+            .map { paths -> paths.dropLast(1) }
+            .forEach { paths ->
+                var map: MutableMap<String, Map<String, Any>>
 
-                while (cursor.moveToNext()) {
-                    pathColumn
-                        .ifExists(cursor::getString)
-                        ?.let { path ->
-                            when {
-                                path.startsWith("/") -> path.drop(1)
-                                path.endsWith("/") -> path.dropLast(1)
-                                else -> path
-                            }
-                        }
-                        ?.also(::add)
+                paths.first().let { first ->
+                    if (folders[first] == null)
+                        folders[first] = mutableMapOf<String, Map<String, Any>>()
+                    map = folders[first] as MutableMap<String, Map<String, Any>>
+                }
+
+                paths.drop(1).forEach { path ->
+                    if (map[path] == null)
+                        map[path] = mutableMapOf<String, Map<String, Any>>()
+
+                    map = map[path] as MutableMap<String, Map<String, Any>>
                 }
             }
-        }.map { it.split("/") }.forEach {
-            lateinit var map: MutableMap<String, Map<String, Any>>
 
-            it.forEachIndexed { index, s ->
-                if (index == 0) {
-                    if (folders[s] == null)
-                        folders[s] = mutableMapOf<String, Map<String, Any>>()
-
-                    map = folders[s] as MutableMap<String, Map<String, Any>>
-                } else {
-                    if (map[s] == null)
-                        map[s] = mutableMapOf<String, Map<String, Any>>()
-
-                    map = map[s] as MutableMap<String, Map<String, Any>>
-                }
-            }
-        }
-
-
-        fun populateFromMap(rootContainer: BaseContainer, map: Map<String, Map<String, Any>>) {
-            map.forEach { kv ->
+        fun populateFromMap(rootContainer: BaseContainer, parentPath: String?, map: Map<String, Map<String, Any>>) {
+            map.forEach { (key, value) ->
+                val contentDirectoryPath = if (parentPath != null) "$parentPath/$key" else key
                 val childContainer = childContainerBuilder(
                     randomId.toString(),
                     rootContainer.rawId,
-                    kv.key,
+                    key,
                     appName,
                     baseUrl,
-                    ContentDirectory(kv.key),
-                    application.contentResolver
-                ).apply { addToRegistry() }
+                    ContentDirectory(contentDirectoryPath)
+                ).apply(addToRegistry)
 
                 rootContainer.addContainer(childContainer)
-
-                populateFromMap(childContainer, kv.value as Map<String, Map<String, Any>>)
+                populateFromMap(childContainer, contentDirectoryPath, value as Map<String, Map<String, Any>>)
             }
         }
 
-        populateFromMap(rootContainer, folders)
+        populateFromMap(parentContainer, null, folders)
+    }
+
+    private fun buildContentUriSet(
+        contentResolver: ContentResolver,
+        externalContentUri: Uri,
+        column: String
+    ): Set<String> = buildSet {
+        contentResolver.query(
+            externalContentUri,
+            arrayOf(column),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val pathColumn = cursor.getColumnIndex(column)
+
+            while (cursor.moveToNext()) {
+                pathColumn
+                    .returnIfExists(cursor::getString)
+                    ?.let { path ->
+                        when {
+                            path.startsWith(File.separator) -> path.drop(1)
+                            path.endsWith(File.separator) -> path.dropLast(1)
+                            else -> path
+                        }
+                    }
+                    ?.also(::add)
+            }
+        }
     }
 
     companion object {
@@ -623,7 +630,7 @@ class UpnpContentRepositoryImpl @Inject constructor(
             MediaStore.MediaColumns.ALBUM
         )
 
-        private inline fun <T> Int.ifExists(block: (Int) -> T): T? {
+        private inline fun <T> Int.returnIfExists(block: (Int) -> T): T? {
             if (this == -1)
                 return null
 
