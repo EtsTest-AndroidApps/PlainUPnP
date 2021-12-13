@@ -22,12 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -162,7 +158,13 @@ class MainActivity : ComponentActivity() {
             }
 
             AppTheme(currentTheme.isDarkTheme()) {
-                Surface {
+                Scaffold(topBar = {
+                    Toolbar(settings) {
+                        if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                            navigationBar(Modifier)
+                        }
+                    }
+                }) {
                     Box {
                         when (configuration.orientation) {
                             Configuration.ORIENTATION_LANDSCAPE -> {
@@ -173,11 +175,6 @@ class MainActivity : ComponentActivity() {
                                     showControls = showControls,
                                     floatingActionButton = { createFloatingActionButton() },
                                     filter = filter,
-                                    toolbar = {
-                                        Toolbar(settings) {
-                                            navigationBar(Modifier)
-                                        }
-                                    },
                                     folderContents = folderContents
                                 )
                             }
@@ -191,9 +188,6 @@ class MainActivity : ComponentActivity() {
                                     floatingActionButton = { createFloatingActionButton() },
                                     filter = filter,
                                     navigationBar = navigationBar,
-                                    toolbar = {
-                                        Toolbar(settings)
-                                    }
                                 )
                             }
                         }
@@ -263,13 +257,10 @@ class MainActivity : ComponentActivity() {
         loading: Boolean,
         navigationBar: ModifierComposableFactory,
         folderContents: ModifierComposableFactory,
-        toolbar: @Composable ColumnScope.() -> Unit,
         floatingActionButton: @Composable BoxScope.() -> Unit,
         filter: ComposableFactory,
     ) {
         Column {
-            toolbar()
-
             navigationBar(Modifier.padding(start = 16.dp))
             LoadingIndicator(loading)
 
@@ -299,13 +290,11 @@ class MainActivity : ComponentActivity() {
         upnpState: UpnpRendererState,
         showControls: Boolean,
         loading: Boolean,
-        toolbar: @Composable ColumnScope.() -> Unit,
         folderContents: ModifierComposableFactory,
         floatingActionButton: ComposableFactory,
         filter: ComposableFactory,
     ) {
         Column {
-            toolbar()
             LoadingIndicator(loading)
 
             val transition = updateTransition(targetState = showControls, label = "")
