@@ -3,9 +3,9 @@ package com.m3sv.plainupnp.data.upnp
 const val PLAINUPNP_LOCAL_DEVICE = "plainupnp-localdevice"
 
 data class LocalDevice(
-    override val displayString: String = "PlainUPnP local device",
+    override val displayString: String = "PlainUPnP",
     override val friendlyName: String = "Play locally",
-    override val isFullyHydrated: Boolean = false,
+    override val isFullyHydrated: Boolean = true,
 ) : UpnpDevice {
 
     override fun asService(service: String): Boolean = true

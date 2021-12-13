@@ -62,7 +62,10 @@ class UpnpManagerImpl @Inject constructor(
 
     override val isConnectedToRenderer: Flow<Boolean> = rendererDiscoveryObservable
         .selectedRenderer
-        .map { it != null }
+        .map { it != null && it.isLocal.not() }
+
+    private val isConnectedToLocalRenderer: Boolean
+        get() = rendererDiscoveryObservable.selectedRenderer.value?.isLocal == true
 
     private val upnpInnerStateChannel = MutableSharedFlow<UpnpRendererState>()
     override val upnpRendererState: Flow<UpnpRendererState> = upnpInnerStateChannel
@@ -70,7 +73,6 @@ class UpnpManagerImpl @Inject constructor(
     override val contentDirectories: Flow<Set<DeviceDisplay>> = contentDirectoryObservable()
     override val renderers: Flow<Set<DeviceDisplay>> = rendererDiscoveryObservable()
 
-    private var isPlayingLocal: Boolean = false
     private val updateChannel = MutableSharedFlow<Pair<Item, Service<*, *>>?>()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -177,12 +179,10 @@ class UpnpManagerImpl @Inject constructor(
         withContext(Dispatchers.IO) {
             val renderer: UpnpDevice = spinnerItem.deviceDisplay.upnpDevice
 
-            isPlayingLocal = renderer.isLocal
-
-            if (isPlayingLocal || renderer != rendererDiscoveryObservable.selectedRenderer.value)
+            if (renderer.isLocal || renderer != rendererDiscoveryObservable.selectedRenderer.value)
                 stopUpdate()
 
-            if (!isPlayingLocal) {
+            if (renderer.isLocal.not()) {
                 rendererDiscoveryObservable.selectRenderer(renderer)
             } else {
                 rendererDiscoveryObservable.selectRenderer(null)
@@ -193,7 +193,7 @@ class UpnpManagerImpl @Inject constructor(
     private suspend fun renderItem(item: RenderItem): Result = withContext(Dispatchers.IO) {
         stopUpdate()
 
-        if (isPlayingLocal) {
+        if (isConnectedToLocalRenderer) {
             launchLocally(item)
             return@withContext Result.Success
         }

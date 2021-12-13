@@ -1,7 +1,6 @@
 package com.m3sv.plainupnp.upnp
 
 import android.app.Application
-import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
@@ -19,7 +18,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
-import java.io.File
 import java.security.SecureRandom
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,7 +38,6 @@ class UpnpContentRepositoryImpl @Inject constructor(
     var containerCache: Map<Long, BaseContainer> = emptyMap()
     private val allCache: MutableMap<Long, ContentModel> = mutableMapOf()
     override val contentCache: Map<Long, ContentModel> = allCache
-
     private val scope = CoroutineScope(Dispatchers.IO)
 
     private val appName by lazy { application.getString(R.string.app_name) }
@@ -81,7 +78,6 @@ class UpnpContentRepositoryImpl @Inject constructor(
 
     private suspend fun refreshInternal() {
         val result: MutableMap<Long, BaseContainer> = mutableMapOf()
-        val contentResolver = application.contentResolver
 
         val rootContainer = DefaultContainer(
             ROOT_ID.toString(),
@@ -92,28 +88,32 @@ class UpnpContentRepositoryImpl @Inject constructor(
 
         val preferences = preferencesRepository.preferences.value
 
+        fun MutableMap<Long, BaseContainer>.addContainer(container: BaseContainer) {
+            this[container.rawId.toLong()] = container
+        }
+
         coroutineScope {
             if (preferences.enableImages) {
                 launch {
-                    val (imageContainer, containers) = getRootImagesContainer(contentResolver)
-                    rootContainer.addContainer(imageContainer)
-                    containers.forEach { container -> result[container.rawId.toLong()] = container }
+                    val imagesContainer = getRootImagesContainer()
+                    rootContainer.addContainer(imagesContainer)
+                    result.addContainer(imagesContainer)
                 }
             }
 
             if (preferences.enableAudio) {
                 launch {
-                    val (audioContainer, containers) = getRootAudioContainer(contentResolver)
+                    val audioContainer = getRootAudioContainer()
                     rootContainer.addContainer(audioContainer)
-                    containers.forEach { container -> result[container.rawId.toLong()] = container }
+                    result.addContainer(audioContainer)
                 }
             }
 
             if (preferences.enableVideos) {
                 launch {
-                    val (videoContainer, containers) = getRootVideoContainer(contentResolver)
+                    val videoContainer = getRootVideoContainer()
                     rootContainer.addContainer(videoContainer)
-                    containers.forEach { container -> result[container.rawId.toLong()] = container }
+                    result.addContainer(videoContainer)
                 }
             }
 
@@ -131,227 +131,34 @@ class UpnpContentRepositoryImpl @Inject constructor(
         containerCache = result
     }
 
-    fun getAudioContainerForAlbum(
-        albumId: String,
-        parentId: String,
-    ): BaseContainer = AllAudioContainer(
-        id = albumId,
-        parentID = parentId,
-        title = "",
+    private fun getRootImagesContainer(): BaseContainer = AllImagesContainer(
+        id = IMAGE_ID.toString(),
+        parentID = ROOT_ID.toString(),
+        title = application.getString(R.string.images),
+        creator = appName,
+        baseUrl = baseUrl,
+        contentResolver = application.contentResolver
+    )
+
+    private fun getRootAudioContainer(): BaseContainer = AllAudioContainer(
+        id = AUDIO_ID.toString(),
+        parentID = ROOT_ID.toString(),
+        title = application.getString(R.string.audio),
         creator = appName,
         baseUrl = baseUrl,
         contentResolver = application.contentResolver,
-        albumId = albumId,
+        albumId = null,
         artist = null
     )
 
-    fun getAlbumContainerForArtist(
-        artistId: String,
-        parentId: String,
-    ): AlbumContainer = AlbumContainer(
-        id = artistId,
-        parentID = parentId,
-        title = "",
+    private fun getRootVideoContainer(): BaseContainer = AllVideoContainer(
+        VIDEO_ID.toString(),
+        parentID = ROOT_ID.toString(),
+        title = application.getString(R.string.videos),
         creator = appName,
-        logger = logger,
         baseUrl = baseUrl,
-        contentResolver = application.contentResolver,
-        artistId = artistId
+        contentResolver = application.contentResolver
     )
-
-    private fun getRootImagesContainer(contentResolver: ContentResolver): Pair<DefaultContainer, List<BaseContainer>> {
-        val rootImageContainer = DefaultContainer(
-            IMAGE_ID.toString(),
-            ROOT_ID.toString(),
-            application.getString(R.string.images),
-            appName
-        )
-
-        val containers = mutableListOf<BaseContainer>(rootImageContainer)
-
-        val allImagesContainer = AllImagesContainer(
-            id = ALL_IMAGE.toString(),
-            parentID = IMAGE_ID.toString(),
-            title = application.getString(R.string.all),
-            creator = appName,
-            baseUrl = baseUrl,
-            contentResolver = application.contentResolver
-        )
-        containers.add(allImagesContainer)
-        rootImageContainer.addContainer(allImagesContainer)
-
-        val byFolderContainer = DefaultContainer(
-            IMAGE_BY_FOLDER.toString(),
-            rootImageContainer.id,
-            application.getString(R.string.by_folder),
-            appName
-        ).also { byFolderContainer ->
-            val column = ImageDirectoryContainer.IMAGE_DATA_PATH
-            val externalContentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            generateContainerStructure(
-                column = column,
-                parentContainer = byFolderContainer,
-                externalContentUri = externalContentUri,
-                contentResolver = contentResolver,
-                childContainerBuilder = { id, parentID, title, creator, baseUrl, contentDirectory ->
-                    ImageDirectoryContainer(
-                        id = id,
-                        parentID = parentID,
-                        title = title,
-                        creator = creator,
-                        baseUrl = baseUrl,
-                        directory = contentDirectory,
-                        contentResolver = contentResolver
-                    )
-                }, addToRegistry = containers::add
-            )
-        }
-
-        containers.add(byFolderContainer)
-        rootImageContainer.addContainer(byFolderContainer)
-
-        return rootImageContainer to containers
-    }
-
-    private fun getRootAudioContainer(contentResolver: ContentResolver): Pair<DefaultContainer, List<BaseContainer>> {
-        val rootAudioContainer = DefaultContainer(
-            AUDIO_ID.toString(),
-            ROOT_ID.toString(),
-            application.getString(R.string.audio),
-            appName
-        )
-
-        val containers = mutableListOf<BaseContainer>(rootAudioContainer)
-
-        val allAudioContainer = AllAudioContainer(
-            ALL_AUDIO.toString(),
-            AUDIO_ID.toString(),
-            application.getString(R.string.all),
-            appName,
-            baseUrl = baseUrl,
-            contentResolver = application.contentResolver,
-            albumId = null,
-            artist = null
-        )
-
-        rootAudioContainer.addContainer(allAudioContainer)
-        containers.add(allAudioContainer)
-
-        val artistContainer = ArtistContainer(
-            ALL_ARTISTS.toString(),
-            AUDIO_ID.toString(),
-            application.getString(R.string.artist),
-            appName,
-            logger,
-            baseUrl,
-            application.contentResolver
-        )
-
-        rootAudioContainer.addContainer(artistContainer)
-        containers.add(artistContainer)
-
-        val albumContainer = AlbumContainer(
-            id = ALL_ALBUMS.toString(),
-            parentID = AUDIO_ID.toString(),
-            title = application.getString(R.string.album),
-            creator = appName,
-            logger = logger,
-            baseUrl = baseUrl,
-            contentResolver = application.contentResolver,
-            artistId = null
-        )
-
-        rootAudioContainer.addContainer(albumContainer)
-        containers.add(albumContainer)
-
-        val byFolderContainer = DefaultContainer(
-            AUDIO_BY_FOLDER.toString(),
-            rootAudioContainer.id,
-            application.getString(R.string.by_folder),
-            appName
-        ).also { container ->
-            val column = AudioDirectoryContainer.AUDIO_DATA_PATH
-            val externalContentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-
-            generateContainerStructure(
-                contentResolver,
-                column,
-                container,
-                externalContentUri,
-                childContainerBuilder = { id, parentID, title, creator, baseUrl, contentDirectory ->
-                    AudioDirectoryContainer(
-                        id = id,
-                        parentID = parentID,
-                        title = title,
-                        creator = creator,
-                        baseUrl = baseUrl,
-                        directory = contentDirectory,
-                        contentResolver = contentResolver
-                    )
-                },
-                addToRegistry = containers::add
-            )
-        }
-
-        rootAudioContainer.addContainer(byFolderContainer)
-        containers.add(byFolderContainer)
-        return rootAudioContainer to containers
-    }
-
-    private fun getRootVideoContainer(contentResolver: ContentResolver): Pair<BaseContainer, List<BaseContainer>> {
-        val rootVideoContainer = DefaultContainer(
-            VIDEO_ID.toString(),
-            ROOT_ID.toString(),
-            application.getString(R.string.videos),
-            appName
-        )
-
-        val containers = mutableListOf<BaseContainer>(rootVideoContainer)
-        val allVideoContainer = AllVideoContainer(
-            ALL_VIDEO.toString(),
-            VIDEO_ID.toString(),
-            application.getString(R.string.all),
-            appName,
-            baseUrl,
-            contentResolver = application.contentResolver
-        )
-
-        rootVideoContainer.addContainer(allVideoContainer)
-        containers.add(allVideoContainer)
-
-        val videoByFolder = DefaultContainer(
-            VIDEO_BY_FOLDER.toString(),
-            rootVideoContainer.id,
-            application.getString(R.string.by_folder),
-            appName
-        ).also { container ->
-            val column = VideoDirectoryContainer.VIDEO_DATA_PATH
-            val externalContentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-
-            generateContainerStructure(
-                contentResolver,
-                column,
-                container,
-                externalContentUri,
-                childContainerBuilder = { id, parentID, title, creator, baseUrl, contentDirectory ->
-                    VideoDirectoryContainer(
-                        id = id,
-                        parentID = parentID,
-                        title = title,
-                        creator = creator,
-                        baseUrl = baseUrl,
-                        directory = contentDirectory,
-                        contentResolver = contentResolver
-                    )
-                },
-                addToRegistry = containers::add
-            )
-        }
-
-        rootVideoContainer.addContainer(videoByFolder)
-        containers.add(videoByFolder)
-        return rootVideoContainer to containers
-    }
 
     private suspend fun getUserSelectedContainer(rootContainer: DefaultContainer) = coroutineScope {
         application
@@ -501,93 +308,6 @@ class UpnpContentRepositoryImpl @Inject constructor(
         name: String?,
     ): BaseContainer = DefaultContainer(id.toString(), parentId, "${USER_DEFINED_PREFIX}$name", null)
 
-    private fun splitBySeparator(value: String): List<String> = value.split(File.separator)
-
-    private fun generateContainerStructure(
-        contentResolver: ContentResolver,
-        column: String,
-        parentContainer: BaseContainer,
-        externalContentUri: Uri,
-        childContainerBuilder: (
-            id: String,
-            parentID: String?,
-            title: String,
-            creator: String,
-            baseUrl: String,
-            contentDirectory: ContentDirectory,
-        ) -> BaseContainer,
-        addToRegistry: (BaseContainer) -> Unit
-    ) {
-        val folders: MutableMap<String, Map<String, Any>> = mutableMapOf()
-        buildContentUriSet(contentResolver, externalContentUri, column)
-            .map(::splitBySeparator)
-            .map { paths -> paths.dropLast(1) }
-            .forEach { paths ->
-                var map: MutableMap<String, Map<String, Any>>
-
-                paths.first().let { first ->
-                    if (folders[first] == null)
-                        folders[first] = mutableMapOf<String, Map<String, Any>>()
-                    map = folders[first] as MutableMap<String, Map<String, Any>>
-                }
-
-                paths.drop(1).forEach { path ->
-                    if (map[path] == null)
-                        map[path] = mutableMapOf<String, Map<String, Any>>()
-
-                    map = map[path] as MutableMap<String, Map<String, Any>>
-                }
-            }
-
-        fun populateFromMap(rootContainer: BaseContainer, parentPath: String?, map: Map<String, Map<String, Any>>) {
-            map.forEach { (key, value) ->
-                val contentDirectoryPath = if (parentPath != null) "$parentPath/$key" else key
-                val childContainer = childContainerBuilder(
-                    randomId.toString(),
-                    rootContainer.rawId,
-                    key,
-                    appName,
-                    baseUrl,
-                    ContentDirectory(contentDirectoryPath)
-                ).apply(addToRegistry)
-
-                rootContainer.addContainer(childContainer)
-                populateFromMap(childContainer, contentDirectoryPath, value as Map<String, Map<String, Any>>)
-            }
-        }
-
-        populateFromMap(parentContainer, null, folders)
-    }
-
-    private fun buildContentUriSet(
-        contentResolver: ContentResolver,
-        externalContentUri: Uri,
-        column: String
-    ): Set<String> = buildSet {
-        contentResolver.query(
-            externalContentUri,
-            arrayOf(column),
-            null,
-            null,
-            null
-        )?.use { cursor ->
-            val pathColumn = cursor.getColumnIndex(column)
-
-            while (cursor.moveToNext()) {
-                pathColumn
-                    .returnIfExists(cursor::getString)
-                    ?.let { path ->
-                        when {
-                            path.startsWith(File.separator) -> path.drop(1)
-                            path.endsWith(File.separator) -> path.dropLast(1)
-                            else -> path
-                        }
-                    }
-                    ?.also(::add)
-            }
-        }
-    }
-
     companion object {
         const val USER_DEFINED_PREFIX = "USER_DEFINED_"
         const val SEPARATOR = '$'
@@ -597,18 +317,6 @@ class UpnpContentRepositoryImpl @Inject constructor(
         const val IMAGE_ID: Long = 1
         const val AUDIO_ID: Long = 2
         const val VIDEO_ID: Long = 3
-
-        // Type subfolder
-        const val ALL_IMAGE: Long = 10
-        const val ALL_VIDEO: Long = 20
-        const val ALL_AUDIO: Long = 30
-
-        const val IMAGE_BY_FOLDER: Long = 100
-        const val VIDEO_BY_FOLDER: Long = 200
-        const val AUDIO_BY_FOLDER: Long = 300
-
-        const val ALL_ARTISTS: Long = 301
-        const val ALL_ALBUMS: Long = 302
 
         // Prefix item
         const val VIDEO_PREFIX = "v-"
