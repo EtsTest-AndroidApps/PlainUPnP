@@ -14,7 +14,6 @@
  */
 package com.m3sv.plainupnp.upnp.android
 
-import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkInfo
 import org.fourthline.cling.model.ModelUtil
@@ -30,9 +29,7 @@ internal object NetworkUtils {
     private val log = Logger.getLogger(NetworkUtils::class.java.name)
 
     @JvmStatic
-    fun getConnectedNetworkInfo(context: Context): NetworkInfo? {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
+    fun getConnectedNetworkInfo(connectivityManager: ConnectivityManager): NetworkInfo? {
         var networkInfo: NetworkInfo? = connectivityManager.activeNetworkInfo
         if (networkInfo != null && networkInfo.isAvailable && networkInfo.isConnected) return networkInfo
 
@@ -63,7 +60,9 @@ internal object NetworkUtils {
     @JvmStatic
     fun isMobile(networkInfo: NetworkInfo?): Boolean = isNetworkType(
         networkInfo,
-        ConnectivityManager.TYPE_MOBILE) || isNetworkType(networkInfo,
+        ConnectivityManager.TYPE_MOBILE
+    ) || isNetworkType(
+        networkInfo,
         ConnectivityManager.TYPE_WIMAX
     )
 
