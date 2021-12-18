@@ -45,14 +45,15 @@ import com.m3sv.plainupnp.compose.AppTheme
 import com.m3sv.plainupnp.compose.LifecycleIndicator
 import com.m3sv.plainupnp.compose.OneToolbar
 import com.m3sv.plainupnp.compose.util.isDarkTheme
+import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
 import com.m3sv.plainupnp.interfaces.LifecycleManager
-import com.m3sv.plainupnp.presentation.SpinnerItem
 import com.m3sv.plainupnp.presentation.settings.SettingsActivity
 import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl.Companion.USER_DEFINED_PREFIX
 import com.m3sv.plainupnp.upnp.folder.Folder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.fourthline.cling.support.model.TransportState
@@ -80,38 +81,30 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            var selectedRenderer by rememberSaveable { mutableStateOf("Stream to") }
+            val viewState: MainViewModel.ViewState by viewModel.viewState.collectAsState()
+
             var showFilter by rememberSaveable { mutableStateOf(false) }
             val volume by viewModel.volume.collectAsState()
             val navigationBarState: List<Folder> by viewModel.navigation.collectAsState()
             val folderContentsState: FolderContents by viewModel.folderContents.collectAsState()
             val filterText by viewModel.filterText.collectAsState()
-            val loading by viewModel.loading.collectAsState()
-            val renderers by viewModel.renderers.collectAsState()
             val upnpState by viewModel.upnpState.collectAsState()
             val showThumbnails by viewModel.showThumbnails.collectAsState()
-            val isSelectRendererButtonExpanded: Boolean by viewModel.isSelectRendererButtonExpanded.collectAsState()
-            val isSelectRendererDialogExpanded: Boolean by viewModel.isSelectRendererDialogExpanded.collectAsState()
-            val isSettingsDialogExpanded: Boolean by viewModel.isSettingsDialogExpanded.collectAsState()
             val currentTheme by themeManager.theme.collectAsState()
             val showControls = upnpState !is UpnpRendererState.Empty
             val configuration = LocalConfiguration.current
 
-            fun collapseExpandedButton() {
-                lifecycleScope.launch { viewModel.collapseSelectRendererButton() }
-                viewModel.collapseSelectRendererDialog()
-            }
-
             @Composable
             fun createFloatingActionButton() {
                 RendererFloatingActionButton(
-                    isButtonExpanded = isSelectRendererButtonExpanded,
-                    isDialogExpanded = isSelectRendererDialogExpanded,
-                    selectedRenderer = selectedRenderer,
-                    renderers = renderers,
-                    onDismissDialog = { collapseExpandedButton() },
+                    selectRendererState = viewState.selectRendererState,
+                    renderers = viewState.renderersState.renderers,
+                    selectedItem = viewState.renderersState.selectedRenderer,
+                    onDismissDialog = {
+                        viewModel.collapseSelectRendererButton()
+                        viewModel.collapseSelectRendererDialog()
+                    },
                     onExpandButton = { lifecycleScope.launch { viewModel.expandSelectRendererButton() } },
-                    onSelectRenderer = { name -> selectedRenderer = name },
                     onExpandDialog = { viewModel.expandSelectRendererDialog() })
             }
 
@@ -144,7 +137,7 @@ class MainActivity : ComponentActivity() {
 
             val settings: @Composable RowScope.() -> Unit = {
                 SettingsMenu(
-                    isExpanded = isSettingsDialogExpanded,
+                    isExpanded = viewState.isSettingsDialogExpanded,
                     onExpandDialog = viewModel::expandSettingsDialog,
                     onDismissDialog = viewModel::collapseSettingsDialog,
                     onSettingsClick = { openSettings() },
@@ -171,7 +164,7 @@ class MainActivity : ComponentActivity() {
                                 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN)
                                 Landscape(
                                     upnpState = upnpState,
-                                    loading = loading,
+                                    loading = viewState.isLoading,
                                     showControls = showControls,
                                     floatingActionButton = { createFloatingActionButton() },
                                     filter = filter,
@@ -183,7 +176,7 @@ class MainActivity : ComponentActivity() {
                                 Portrait(
                                     upnpState = upnpState,
                                     folderContents = folderContents,
-                                    loading = loading,
+                                    loading = viewState.isLoading,
                                     showControls = showControls,
                                     floatingActionButton = { createFloatingActionButton() },
                                     filter = filter,
@@ -566,51 +559,65 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun RendererFloatingActionButton(
-        isButtonExpanded: Boolean,
-        isDialogExpanded: Boolean,
-        selectedRenderer: String,
-        renderers: List<SpinnerItem>,
+        selectRendererState: MainViewModel.ViewState.SelectRendererState,
+        renderers: List<UpnpDevice>,
+        selectedItem: UpnpDevice?,
         onDismissDialog: () -> Unit,
         onExpandButton: () -> Unit,
-        onSelectRenderer: (String) -> Unit,
         onExpandDialog: () -> Unit,
     ) {
-        Box {
-            FloatingActionButton(onClick = {
-                if (isButtonExpanded)
-                    onExpandDialog()
-                else {
-                    onExpandButton()
-                }
-            }, modifier = Modifier.padding(16.dp)) {
-                Row(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Icon(painterResource(id = R.drawable.ic_cast), null)
-                    // Toggle the visibility of the content with animation.
-                    AnimatedVisibility(visible = isButtonExpanded) {
+        LaunchedEffect(selectRendererState) {
+            delay(5000)
+            onDismissDialog()
+        }
+
+        FloatingActionButton(onClick = {
+            if (selectRendererState.isSelectRendererButtonExpanded)
+                onExpandDialog()
+            else {
+                onExpandButton()
+            }
+        }, modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(painterResource(id = R.drawable.ic_cast), null)
+                // Toggle the visibility of the content with animation.
+                AnimatedVisibility(visible = selectRendererState.isSelectRendererButtonExpanded) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = selectedRenderer,
+                            text = selectedItem?.friendlyName ?: "Stream to",
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 8.dp, top = 3.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp)
                         )
+
+                        AnimatedVisibility(selectedItem != null) {
+                            Icon(painterResource(id = R.drawable.ic_close),
+                                contentDescription = null,
+                                modifier = Modifier.clickable {
+                                    if (selectedItem != null) viewModel.selectRenderer(selectedItem)
+                                })
+                        }
                     }
                 }
             }
+        }
 
-            DropdownMenu(
-                expanded = isDialogExpanded,
-                onDismissRequest = onDismissDialog,
-                offset = DpOffset((16).dp, (0).dp),
-            ) {
-                for (item in renderers) {
-                    DropdownMenuItem(onClick = {
-                        onDismissDialog()
-                        onSelectRenderer(item.name)
-
-                        viewModel.selectRenderer(item)
-                    }) {
-                        Text(text = item.name)
+        DropdownMenu(
+            expanded = selectRendererState.isSelectRendererDialogExpanded,
+            onDismissRequest = onDismissDialog,
+            offset = DpOffset((16).dp, (0).dp),
+        ) {
+            for (item in renderers) {
+                DropdownMenuItem(onClick = {
+                    viewModel.selectRenderer(item)
+                }) {
+                    AnimatedVisibility(visible = item == selectedItem) {
+                        Icon(painterResource(R.drawable.ic_check), null)
                     }
+                    Text(text = item.friendlyName, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

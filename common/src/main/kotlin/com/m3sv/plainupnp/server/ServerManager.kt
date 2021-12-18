@@ -1,8 +1,8 @@
 package com.m3sv.plainupnp.server
 
 interface ServerManager {
-    fun start()
-    fun resume()
-    fun pause()
-    fun shutdown()
+    suspend fun start()
+    suspend fun resume()
+    suspend fun pause()
+    suspend fun shutdown()
 }

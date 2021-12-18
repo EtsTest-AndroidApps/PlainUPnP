@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
 import com.m3sv.plainupnp.common.util.pass
+import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
-import com.m3sv.plainupnp.presentation.SpinnerItem
 import com.m3sv.plainupnp.upnp.folder.Folder
 import com.m3sv.plainupnp.upnp.manager.Result
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
@@ -28,7 +28,10 @@ class MainViewModel @Inject constructor(
     private val volumeManager: BufferedVolumeManager,
 ) : ViewModel() {
 
-    val isConnectedToRenderer: Flow<Boolean> = upnpManager.isConnectedToRenderer
+    private val _viewState: MutableStateFlow<ViewState> = MutableStateFlow(ViewState.empty())
+    val viewState: StateFlow<ViewState> = _viewState.asStateFlow()
+
+    val isConnectedToRenderer: Flow<Boolean> = upnpManager.selectedRenderer.map { it != null }
 
     val volume: StateFlow<VolumeUpdate> = volumeManager
         .volumeFlow
@@ -43,10 +46,6 @@ class MainViewModel @Inject constructor(
             started = SharingStarted.Lazily,
             initialValue = VolumeUpdate.Hide(-1)
         )
-
-    private val _loading: MutableStateFlow<Boolean> = MutableStateFlow(false)
-
-    val loading: StateFlow<Boolean> = _loading
 
     private val _filterText: MutableStateFlow<String> = MutableStateFlow("")
 
@@ -92,10 +91,42 @@ class MainViewModel @Inject constructor(
         .upnpRendererState
         .stateIn(viewModelScope, SharingStarted.Eagerly, UpnpRendererState.Empty)
 
-    val renderers: StateFlow<List<SpinnerItem>> = upnpManager
-        .renderers
-        .map { devices -> devices.map { SpinnerItem(it.upnpDevice.friendlyName, it) } }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, listOf())
+    private val isSelectRendererButtonExpanded: MutableStateFlow<Boolean> = MutableStateFlow(false)
+    private val isSelectRendererDialogExpanded = MutableStateFlow(false)
+
+    init {
+        viewModelScope.launch {
+            combine(upnpManager.renderers, upnpManager.selectedRenderer) { renderers, selectedRenderer ->
+                updateState { previousState ->
+                    val newRenderersState = previousState.renderersState.copy(
+                        renderers = renderers.toList(),
+                        selectedRenderer = selectedRenderer
+                    )
+                    previousState.copy(renderersState = newRenderersState)
+                }
+            }.collect()
+        }
+
+        viewModelScope.launch {
+            combine(
+                isSelectRendererButtonExpanded,
+                isSelectRendererDialogExpanded
+            ) { isButtonExpanded, isDialogExpanded ->
+                updateState { previousState ->
+                    val newRendererState = previousState.selectRendererState.copy(
+                        isSelectRendererButtonExpanded = isButtonExpanded,
+                        isSelectRendererDialogExpanded = isDialogExpanded
+                    )
+                    previousState.copy(selectRendererState = newRendererState)
+                }
+            }.collect()
+        }
+    }
+
+    private inline fun updateState(block: (previousState: ViewState) -> ViewState) {
+        val previousState = viewState.value
+        _viewState.value = block(previousState)
+    }
 
     val finishActivityFlow: Flow<Unit> = upnpManager
         .navigationStack
@@ -111,64 +142,43 @@ class MainViewModel @Inject constructor(
             initialValue = false
         )
 
-    private val _isSelectRendererButtonExpanded: MutableSharedFlow<Boolean> = MutableSharedFlow(1)
-
-    val isSelectRendererButtonExpanded: StateFlow<Boolean> = _isSelectRendererButtonExpanded
-        .transformLatest { visible ->
-            emit(visible)
-            if (visible) {
-                delay(5000)
-                emit(false)
-                collapseSelectRendererDialog()
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    private val _isSelectRendererDialogExpanded = MutableStateFlow(false)
-
-    val isSelectRendererDialogExpanded: StateFlow<Boolean> = _isSelectRendererDialogExpanded
-
-    private val _isSettingsDialogExpanded = MutableStateFlow(false)
-
-    val isSettingsDialogExpanded: StateFlow<Boolean> = _isSettingsDialogExpanded
-
     fun itemClick(id: String) {
         viewModelScope.launch {
-            _loading.value = true
+            updateState { it.copy(isLoading = true) }
 
             when (upnpManager.itemClick(id)) {
-                Result.Error.RENDERER_NOT_SELECTED -> _isSelectRendererButtonExpanded.emit(true)
+                Result.Error.RENDERER_NOT_SELECTED -> expandSelectRendererButton()
                 Result.Success,
                 Result.Error.AV_SERVICE_NOT_FOUND,
                 Result.Error.GENERIC -> pass
             }
 
-            _loading.value = false
+            updateState { it.copy(isLoading = false) }
         }
     }
 
-    suspend fun expandSelectRendererButton() {
-        _isSelectRendererButtonExpanded.emit(true)
+    fun expandSelectRendererButton() {
+        isSelectRendererButtonExpanded.value = true
     }
 
-    suspend fun collapseSelectRendererButton() {
-        _isSelectRendererButtonExpanded.emit(false)
+    fun collapseSelectRendererButton() {
+        isSelectRendererButtonExpanded.value = false
     }
 
     fun expandSelectRendererDialog() {
-        _isSelectRendererDialogExpanded.value = true
+        isSelectRendererDialogExpanded.value = true
     }
 
     fun collapseSelectRendererDialog() {
-        _isSelectRendererDialogExpanded.value = false
+        isSelectRendererDialogExpanded.value = false
     }
 
     fun expandSettingsDialog() {
-        _isSettingsDialogExpanded.value = true
+        updateState { it.copy(isSettingsDialogExpanded = true) }
     }
 
     fun collapseSettingsDialog() {
-        _isSettingsDialogExpanded.value = false
+        updateState { it.copy(isSettingsDialogExpanded = false) }
     }
 
     fun moveTo(progress: Int) {
@@ -177,8 +187,8 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun selectRenderer(position: SpinnerItem) {
-        viewModelScope.launch { upnpManager.selectRenderer(position) }
+    fun selectRenderer(device: UpnpDevice) {
+        viewModelScope.launch { upnpManager.selectRenderer(device) }
     }
 
     fun playerButtonClick(button: PlayerButton) {
@@ -210,6 +220,32 @@ class MainViewModel @Inject constructor(
 
     fun clearFilterText() {
         filterInput("")
+    }
+
+    data class ViewState(
+        val isSettingsDialogExpanded: Boolean,
+        val selectRendererState: SelectRendererState,
+        val isLoading: Boolean,
+        val renderersState: RenderersState,
+    ) {
+        data class RenderersState(
+            val renderers: List<UpnpDevice>,
+            val selectedRenderer: UpnpDevice?,
+        )
+
+        data class SelectRendererState(
+            val isSelectRendererButtonExpanded: Boolean,
+            val isSelectRendererDialogExpanded: Boolean,
+        )
+
+        companion object {
+            fun empty() = ViewState(
+                isSettingsDialogExpanded = false,
+                isLoading = false,
+                selectRendererState = SelectRendererState(false, false),
+                renderersState = RenderersState(listOf(), null)
+            )
+        }
     }
 
     companion object {

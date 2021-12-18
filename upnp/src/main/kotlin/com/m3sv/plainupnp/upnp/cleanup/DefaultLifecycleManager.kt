@@ -10,7 +10,6 @@ import javax.inject.Inject
 
 class DefaultLifecycleManager @Inject constructor() : LifecycleManager {
     private val _lifecycleState = MutableStateFlow(LifecycleState.UNINITIALIZED)
-
     override val lifecycleState: StateFlow<LifecycleState> = _lifecycleState
 
     override val isFinishing: Boolean

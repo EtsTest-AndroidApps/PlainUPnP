@@ -27,7 +27,6 @@ package com.m3sv.plainupnp.upnp.discovery.device
 import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpDeviceEvent
 import com.m3sv.plainupnp.logging.Logger
-import com.m3sv.plainupnp.upnp.CDevice
 import com.m3sv.plainupnp.upnp.CRegistryListener
 import com.m3sv.plainupnp.upnp.RegistryListener
 import org.fourthline.cling.UpnpService
@@ -77,8 +76,8 @@ abstract class DeviceDiscovery(val upnpService: UpnpService, val logger: Logger)
         val deviceList = mutableListOf<UpnpDevice>()
 
         try {
-            registry?.devices?.forEach {
-                val device = CDevice(it)
+            registry?.devices?.forEach { identity ->
+                val device = UpnpDevice(identity)
                 filter.device = device
 
                 if (filter.call()) deviceList.add(device)
@@ -132,7 +131,7 @@ abstract class DeviceDiscovery(val upnpService: UpnpService, val logger: Logger)
 
             // Now add all devices to the list we already know about
             devices?.forEach {
-                registryListener.deviceAdded(CDevice(it))
+                registryListener.deviceAdded(UpnpDevice(it))
             }
         }
     }

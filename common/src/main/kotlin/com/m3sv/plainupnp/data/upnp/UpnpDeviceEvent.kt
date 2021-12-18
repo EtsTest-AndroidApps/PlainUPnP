@@ -1,7 +1,9 @@
 package com.m3sv.plainupnp.data.upnp
 
 
-sealed class UpnpDeviceEvent {
-    data class Added(val upnpDevice: UpnpDevice) : UpnpDeviceEvent()
-    data class Removed(val upnpDevice: UpnpDevice) : UpnpDeviceEvent()
+sealed interface UpnpDeviceEvent {
+    val device: UpnpDevice
+
+    data class Added(override val device: UpnpDevice) : UpnpDeviceEvent
+    data class Removed(override val device: UpnpDevice) : UpnpDeviceEvent
 }

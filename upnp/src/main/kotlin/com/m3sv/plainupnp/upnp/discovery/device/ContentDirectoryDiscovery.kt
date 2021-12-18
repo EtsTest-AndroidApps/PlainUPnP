@@ -8,7 +8,7 @@ import javax.inject.Inject
 class CallableContentDirectoryFilter : CallableFilter {
     override var device: UpnpDevice? = null
 
-    override fun call(): Boolean? =
+    override fun call(): Boolean =
         device?.asService("ContentDirectory") ?: false
 }
 

@@ -93,7 +93,6 @@ class AndroidRouter(
         unregisterBroadcastReceiver()
     }
 
-    @Throws(RouterException::class)
     override fun enable(): Boolean {
         lock(writeLock)
         return try {

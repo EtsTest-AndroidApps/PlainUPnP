@@ -2,13 +2,8 @@ package com.m3sv.plainupnp.upnp.manager
 
 
 import com.m3sv.plainupnp.common.util.formatTime
-import com.m3sv.plainupnp.data.upnp.DeviceDisplay
-import com.m3sv.plainupnp.data.upnp.UpnpDevice
-import com.m3sv.plainupnp.data.upnp.UpnpItemType
-import com.m3sv.plainupnp.data.upnp.UpnpRendererState
+import com.m3sv.plainupnp.data.upnp.*
 import com.m3sv.plainupnp.logging.Logger
-import com.m3sv.plainupnp.presentation.SpinnerItem
-import com.m3sv.plainupnp.upnp.CDevice
 import com.m3sv.plainupnp.upnp.ContentUpdateState
 import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl
 import com.m3sv.plainupnp.upnp.UpnpRepository
@@ -16,8 +11,8 @@ import com.m3sv.plainupnp.upnp.didl.ClingContainer
 import com.m3sv.plainupnp.upnp.didl.ClingDIDLObject
 import com.m3sv.plainupnp.upnp.didl.ClingMedia
 import com.m3sv.plainupnp.upnp.didl.MiscItem
-import com.m3sv.plainupnp.upnp.discovery.device.ContentDirectoryDiscoveryObservable
-import com.m3sv.plainupnp.upnp.discovery.device.RendererDiscoveryObservable
+import com.m3sv.plainupnp.upnp.discovery.device.ContentDirectories
+import com.m3sv.plainupnp.upnp.discovery.device.Renderers
 import com.m3sv.plainupnp.upnp.folder.Folder
 import com.m3sv.plainupnp.upnp.folder.FolderModel
 import com.m3sv.plainupnp.upnp.trackmetadata.TrackMetadata
@@ -50,8 +45,8 @@ sealed interface Result {
 }
 
 class UpnpManagerImpl @Inject constructor(
-    private val rendererDiscoveryObservable: RendererDiscoveryObservable,
-    private val contentDirectoryObservable: ContentDirectoryDiscoveryObservable,
+    renderersDiscovery: Renderers,
+    contentDirectoriesDiscovery: ContentDirectories,
     private val launchLocally: LaunchLocallyUseCase,
     private val upnpRepository: UpnpRepository,
     private val volumeRepository: VolumeRepository,
@@ -59,19 +54,30 @@ class UpnpManagerImpl @Inject constructor(
     private val logger: Logger
 ) : UpnpManager {
     override val volumeFlow: Flow<Int> = volumeRepository.volumeFlow
-
-    override val isConnectedToRenderer: Flow<Boolean> = rendererDiscoveryObservable
-        .selectedRenderer
-        .map { it != null && it.isLocal.not() }
-
-    private val isConnectedToLocalRenderer: Boolean
-        get() = rendererDiscoveryObservable.selectedRenderer.value?.isLocal == true
-
+    private val _selectedRenderer: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
+    override val selectedRenderer: StateFlow<UpnpDevice?> = _selectedRenderer.asStateFlow()
+    private val selectedContentDirectory: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
     private val upnpInnerStateChannel = MutableSharedFlow<UpnpRendererState>()
     override val upnpRendererState: Flow<UpnpRendererState> = upnpInnerStateChannel
 
-    override val contentDirectories: Flow<Set<DeviceDisplay>> = contentDirectoryObservable()
-    override val renderers: Flow<Set<DeviceDisplay>> = rendererDiscoveryObservable()
+    override val contentDirectories: Flow<Set<UpnpDevice>> =
+        contentDirectoriesDiscovery().scan(setOf()) { acc, event ->
+            val device = event.device
+
+            when (event) {
+                is UpnpDeviceEvent.Added -> acc + device
+                is UpnpDeviceEvent.Removed -> acc - device
+            }
+        }
+
+    override val renderers: Flow<Set<UpnpDevice>> = renderersDiscovery().scan(setOf()) { acc, event ->
+        val device = event.device
+
+        when (event) {
+            is UpnpDeviceEvent.Added -> acc + device
+            is UpnpDeviceEvent.Removed -> acc - device
+        }
+    }
 
     private val updateChannel = MutableSharedFlow<Pair<Item, Service<*, *>>?>()
 
@@ -85,9 +91,7 @@ class UpnpManagerImpl @Inject constructor(
                 if (pair == null)
                     return@scan launch { }
 
-                Timber.d("update: received new pair: ${pair.first}")
-                val didlItem = pair.first
-                val service = pair.second
+                val (didlItem, service) = pair
 
                 val type = when (didlItem) {
                     is AudioItem -> UpnpItemType.AUDIO
@@ -151,7 +155,7 @@ class UpnpManagerImpl @Inject constructor(
         scope.launch {
             contentRepository.refreshState.collect {
                 if (it is ContentUpdateState.Ready) {
-                    val contentDirectory = contentDirectoryObservable.selectedContentDirectory
+                    val contentDirectory = selectedContentDirectory.value
 
                     if (contentDirectory != null) {
                         safeNavigateTo(
@@ -164,28 +168,25 @@ class UpnpManagerImpl @Inject constructor(
         }
     }
 
-    override suspend fun selectContentDirectory(upnpDevice: UpnpDevice): Result = withContext(Dispatchers.IO) {
+    override suspend fun selectContentDirectory(device: UpnpDevice): Result = withContext(Dispatchers.IO) {
         folderStack.value = listOf()
         contentCache.clear()
-        contentDirectoryObservable.selectedContentDirectory = upnpDevice
+        selectedContentDirectory.value = device
 
         safeNavigateTo(
             folderId = ROOT_FOLDER_ID,
-            folderName = upnpDevice.friendlyName
+            folderName = device.friendlyName
         )
     }
 
-    override suspend fun selectRenderer(spinnerItem: SpinnerItem) {
+    override suspend fun selectRenderer(device: UpnpDevice) {
         withContext(Dispatchers.IO) {
-            val renderer: UpnpDevice = spinnerItem.deviceDisplay.upnpDevice
+            stopUpdate()
 
-            if (renderer.isLocal || renderer != rendererDiscoveryObservable.selectedRenderer.value)
-                stopUpdate()
-
-            if (renderer.isLocal.not()) {
-                rendererDiscoveryObservable.selectRenderer(renderer)
+            _selectedRenderer.value = if (selectedRenderer.value != device) {
+                device
             } else {
-                rendererDiscoveryObservable.selectRenderer(null)
+                null
             }
         }
     }
@@ -193,13 +194,9 @@ class UpnpManagerImpl @Inject constructor(
     private suspend fun renderItem(item: RenderItem): Result = withContext(Dispatchers.IO) {
         stopUpdate()
 
-        if (isConnectedToLocalRenderer) {
+        if (selectedRenderer.value == null) {
             launchLocally(item)
             return@withContext Result.Success
-        }
-
-        if (!rendererDiscoveryObservable.isConnectedToRenderer) {
-            return@withContext Result.Error.RENDERER_NOT_SELECTED
         }
 
         val result = runCatching {
@@ -255,7 +252,7 @@ class UpnpManagerImpl @Inject constructor(
 
     private suspend fun stopUpdate() {
         withContext(Dispatchers.IO) {
-            if (rendererDiscoveryObservable.isConnectedToRenderer) {
+            if (selectedRenderer.value != null) {
                 stopPlayback()
                 updateChannel.emit(null)
             }
@@ -418,7 +415,7 @@ class UpnpManagerImpl @Inject constructor(
     override val navigationStack: Flow<List<Folder>> = folderStack.onEach { folders ->
         if (folders.isEmpty()) {
             stopUpdate()
-            rendererDiscoveryObservable.selectRenderer(null)
+            _selectedRenderer.value = null
         }
     }
 
@@ -428,7 +425,7 @@ class UpnpManagerImpl @Inject constructor(
     ): Result = withContext(Dispatchers.IO) {
         Timber.d("Navigating to $folderId with name $folderName")
 
-        val selectedDevice = contentDirectoryObservable.selectedContentDirectory
+        val selectedDevice = selectedContentDirectory.value
 
         if (selectedDevice == null) {
             logger.e("Selected content directory is null!")
@@ -436,7 +433,7 @@ class UpnpManagerImpl @Inject constructor(
         }
 
         val service: Service<*, *>? =
-            (selectedDevice as CDevice).device.findService(UDAServiceType(CONTENT_DIRECTORY))
+            selectedDevice.device.findService(UDAServiceType(CONTENT_DIRECTORY))
 
         if (service == null || !service.hasActions()) {
             logger.e("Service is null or has no actions")
@@ -484,11 +481,10 @@ class UpnpManagerImpl @Inject constructor(
 
 
     private val avService: Service<*, *>?
-        get() = rendererDiscoveryObservable
-            .selectedRenderer
+        get() = selectedRenderer
             .value
             ?.let { renderer ->
-                val service: Service<*, *> = (renderer as CDevice)
+                val service: Service<*, *> = renderer
                     .device
                     .findService(UDAServiceType(AV_TRANSPORT))
                     ?: return null
@@ -501,10 +497,9 @@ class UpnpManagerImpl @Inject constructor(
             }
 
     private val rcService: Service<*, *>?
-        get() = rendererDiscoveryObservable
-            .selectedRenderer
+        get() = selectedRenderer
             .value?.let { renderer ->
-                val service: Service<*, *> = (renderer as CDevice)
+                val service: Service<*, *> = renderer
                     .device
                     .findService(UDAServiceType(RENDERING_CONTROL))
                     ?: return null

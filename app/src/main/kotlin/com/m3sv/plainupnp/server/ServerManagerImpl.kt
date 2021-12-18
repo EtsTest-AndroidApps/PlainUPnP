@@ -1,23 +1,23 @@
 package com.m3sv.plainupnp.server
 
+import com.m3sv.plainupnp.common.ApplicationMode
 import com.m3sv.plainupnp.common.preferences.Preferences
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
+import com.m3sv.plainupnp.common.util.asApplicationMode
 import com.m3sv.plainupnp.interfaces.LifecycleManager
 import com.m3sv.plainupnp.logging.Logger
 import com.m3sv.plainupnp.upnp.android.AndroidUpnpServiceImpl
+import com.m3sv.plainupnp.upnp.localdevice.LocalDeviceProvider
 import com.m3sv.plainupnp.upnp.server.MediaServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import org.fourthline.cling.UpnpService
 import org.fourthline.cling.controlpoint.ControlPoint
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.concurrent.thread
 
 @Singleton
 class ServerManagerImpl @Inject constructor(
@@ -26,11 +26,10 @@ class ServerManagerImpl @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val lifecycleManager: LifecycleManager,
     private val controlPoint: ControlPoint,
-    private val logger: Logger
+    private val logger: Logger,
+    private val localDeviceProvider: LocalDeviceProvider
 ) : ServerManager {
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
     private val isServerOn: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
     init {
@@ -61,14 +60,14 @@ class ServerManagerImpl @Inject constructor(
             isServerOn.onEach { isOn ->
                 if (isOn) {
                     scope.launch {
-                        (upnpService as AndroidUpnpServiceImpl).addLocalDevice()
+                        addLocalDevice()
                         runCatching { mediaServer.start() }.onFailure {
                             logger.e(it, "Failed to start media server!")
                         }
                     }
                 } else {
                     scope.launch {
-                        (upnpService as AndroidUpnpServiceImpl).removeLocalDevice()
+                        removeLocalDevice()
                         runCatching { mediaServer.stop() }.onFailure {
                             logger.e(it, "Failed to stop media server!")
                         }
@@ -78,26 +77,51 @@ class ServerManagerImpl @Inject constructor(
                 .onEach { controlPoint.search() }
                 .collect()
         }
+
+        scope.launch {
+            preferencesRepository
+                .preferences
+                .filterNotNull()
+                .map { it.applicationMode.asApplicationMode() }
+                .collect { applicationMode ->
+                    when (applicationMode) {
+                        ApplicationMode.Streaming -> addLocalDevice()
+                        ApplicationMode.Player -> removeLocalDevice()
+                    }
+                }
+        }
     }
 
-    override fun start() {
+    override suspend fun start() {
         (upnpService as AndroidUpnpServiceImpl).start()
     }
 
-    override fun resume() {
+    override suspend fun resume() {
         isServerOn.value = true
     }
 
-    override fun pause() {
+    override suspend fun pause() {
         isServerOn.value = false
     }
 
-    override fun shutdown() {
-        thread {
-            upnpService.shutdown()
-            mediaServer.stop()
-            lifecycleManager.close()
-        }
+    override suspend fun shutdown() {
+        upnpService.shutdown()
+        mediaServer.stop()
+        lifecycleManager.close()
+    }
+
+    private fun addLocalDevice() {
+        runCatching {
+            if (preferencesRepository.isStreaming) {
+                upnpService.registry.addDevice(localDeviceProvider.localDevice)
+            }
+        }.onFailure(logger::e)
+    }
+
+    private fun removeLocalDevice() {
+        runCatching {
+            upnpService.registry.removeDevice(localDeviceProvider.localDevice)
+        }.onFailure(logger::e)
     }
 }
 
