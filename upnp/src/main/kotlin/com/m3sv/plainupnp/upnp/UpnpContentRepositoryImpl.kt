@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.SecureRandom
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -185,66 +187,73 @@ class UpnpContentRepositoryImpl @Inject constructor(
         uri: Uri,
         parentRawId: String,
         newContainerName: String,
-    ): Pair<BaseContainer, List<BaseContainer>> = coroutineScope {
+    ): Pair<BaseContainer, List<BaseContainer>> {
         val newContainer = createContainer(randomId, parentId = parentRawId, newContainerName)
-        val containers = mutableListOf(newContainer)
+        var containers = listOf(newContainer)
         val resolver = application.contentResolver
         val childrenUri =
             DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getDocumentId(uri))
 
-        resolver.query(
-            childrenUri,
-            mediaColumns,
-            null,
-            null,
-            null
-        )?.use { cursor ->
-            val idColumn = cursor.getColumnIndex(mediaColumns[0])
-            val mimeColumn = cursor.getColumnIndex(mediaColumns[1])
-            val displayNameColumn = cursor.getColumnIndex(mediaColumns[2])
-            val sizeColumn = cursor.getColumnIndex(mediaColumns[3])
-            // Skip artist, we don't use it here for now
-            val albumArtistColumn = cursor.getColumnIndex(mediaColumns[5])
-            val albumColumn = cursor.getColumnIndex(mediaColumns[6])
+        coroutineScope {
+            resolver.query(
+                childrenUri,
+                mediaColumns,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndex(mediaColumns[0])
+                val mimeColumn = cursor.getColumnIndex(mediaColumns[1])
+                val displayNameColumn = cursor.getColumnIndex(mediaColumns[2])
+                val sizeColumn = cursor.getColumnIndex(mediaColumns[3])
+                // Skip artist, we don't use it here for now
+                val albumArtistColumn = cursor.getColumnIndex(mediaColumns[5])
+                val albumColumn = cursor.getColumnIndex(mediaColumns[6])
 
-            while (cursor.moveToNext()) {
-                val id = idColumn.returnIfExists(cursor::getStringOrNull) ?: continue
-                val newDocumentUri = DocumentsContract.buildDocumentUriUsingTree(uri, id)
-                val mimeType = mimeColumn.returnIfExists(cursor::getStringOrNull) ?: continue
-                val displayName = displayNameColumn.returnIfExists(cursor::getStringOrNull) ?: "Unnamed"
-                val size = sizeColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
-                val albumArtist = albumArtistColumn.returnIfExists(cursor::getStringOrNull)
-                val album = albumArtistColumn.returnIfExists(cursor::getStringOrNull)
+                val mutex = Mutex()
 
-                when {
-                    mimeType == DocumentsContract.Document.MIME_TYPE_DIR -> launch {
-                        val (queryContainer, queryContainers) = queryUri(
-                            newDocumentUri,
-                            newContainer.rawId,
-                            displayName
-                        )
+                while (cursor.moveToNext()) {
+                    val id = idColumn.returnIfExists(cursor::getStringOrNull) ?: continue
+                    val newDocumentUri = DocumentsContract.buildDocumentUriUsingTree(uri, id)
+                    val mimeType = mimeColumn.returnIfExists(cursor::getStringOrNull) ?: continue
+                    val displayName = displayNameColumn.returnIfExists(cursor::getStringOrNull) ?: "Unnamed"
+                    val size = sizeColumn.returnIfExists(cursor::getLongOrNull) ?: 0L
+                    val albumArtist = albumArtistColumn.returnIfExists(cursor::getStringOrNull)
+                    val album = albumArtistColumn.returnIfExists(cursor::getStringOrNull)
 
-                        newContainer.addContainer(queryContainer)
-                        containers.addAll(queryContainers)
-                    }
+                    when {
+                        mimeType == DocumentsContract.Document.MIME_TYPE_DIR -> launch {
+                            val (queryContainer, queryContainers) = queryUri(
+                                newDocumentUri,
+                                newContainer.rawId,
+                                displayName
+                            )
 
-                    mimeType != DocumentsContract.Document.MIME_TYPE_DIR && mimeType.isNotBlank() -> {
-                        addFile(
-                            newContainer,
-                            newDocumentUri,
-                            displayName,
-                            mimeType,
-                            size,
-                            null,
-                            album,
-                            albumArtist
-                        )
+                            newContainer.addContainer(queryContainer)
+
+                            mutex.withLock {
+                                containers = containers + queryContainers
+                            }
+                        }
+
+                        mimeType != DocumentsContract.Document.MIME_TYPE_DIR && mimeType.isNotBlank() -> {
+                            addFile(
+                                newContainer,
+                                newDocumentUri,
+                                displayName,
+                                mimeType,
+                                size,
+                                null,
+                                album,
+                                albumArtist
+                            )
+                        }
                     }
                 }
             }
         }
 
-        newContainer to containers
+        return newContainer to containers
     }
 
     private fun addFile(
@@ -326,7 +335,7 @@ class UpnpContentRepositoryImpl @Inject constructor(
 
         private val random = SecureRandom()
         private val randomId
-            get() = abs(random.nextLong())
+            get() = abs(random.nextLong().coerceIn(Long.MIN_VALUE + 1 until Long.MAX_VALUE))
 
         private val mediaColumns = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,

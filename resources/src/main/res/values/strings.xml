@@ -56,4 +56,8 @@
     <string name="run_in_background">Run in background</string>
     <string name="pause_in_background">Pause in background</string>
     <string name="enable_thumbnails_note">Enabling thumbnails might slow down your device, use carefully</string>
+    <string name="sort_by_default">None</string>
+    <string name="sort_by_alphabeticaly">Name</string>
+    <string name="sort_by_size">Size</string>
+    <string name="sort_by_date">Date</string>
 </resources>

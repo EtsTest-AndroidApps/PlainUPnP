@@ -2,9 +2,11 @@ package com.m3sv.plainupnp.presentation.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.m3sv.plainupnp.R
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
 import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
+import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl
 import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
 import com.m3sv.plainupnp.upnp.didl.ClingMedia
 import com.m3sv.plainupnp.upnp.folder.Folder
@@ -50,9 +52,9 @@ class MainViewModel @Inject constructor(
             initialValue = VolumeUpdate.Hide(Volume(-1))
         )
 
-    private val _filterText: MutableStateFlow<String> = MutableStateFlow("")
-
-    val filterText: StateFlow<String> = _filterText
+    private val filterText: MutableStateFlow<String> = MutableStateFlow("")
+    private val orderBy: MutableStateFlow<ViewState.OrderBy> = MutableStateFlow(ViewState.OrderBy.Default)
+    private val order: MutableStateFlow<ViewState.SortOrder> = MutableStateFlow(ViewState.SortOrder.Ascending)
 
     val navigation: StateFlow<List<Folder>> = upnpManager
         .navigationStack
@@ -61,33 +63,6 @@ class MainViewModel @Inject constructor(
             scope = viewModelScope,
             started = SharingStarted.Lazily,
             initialValue = listOf()
-        )
-
-    val folderContents: StateFlow<FolderContents> = combine(
-        navigation.filterNot { it.isEmpty() },
-        filterText
-    ) { folders, filterText ->
-        val newContents = folders
-            .last()
-            .folderModel
-            .contents
-            .filter { it.title.contains(filterText, ignoreCase = true) }
-            .map { clingObject ->
-                ItemViewModel(
-                    id = clingObject.id,
-                    title = clingObject.title,
-                    type = clingObject.toItemType(),
-                    uri = clingObject.uri
-                )
-            }
-
-        FolderContents.Contents(newContents)
-    }
-        .flowOn(Dispatchers.Default)
-        .stateIn(
-            viewModelScope,
-            SharingStarted.Eagerly,
-            FolderContents.Empty
         )
 
     val upnpState: StateFlow<UpnpRendererState> = upnpManager
@@ -131,9 +106,57 @@ class MainViewModel @Inject constructor(
                 updateState { it.copy(isLoading = true) }
                 val (result, item) = upnpManager.itemClick(id)
                 val playingNow = if (result is Result.Success && item is ClingMedia) id else null
-
                 updateState { it.copy(isLoading = false, lastPlayed = playingNow ?: it.lastPlayed) }
             }.collect()
+        }
+
+        viewModelScope.launch {
+            combine(
+                navigation.filterNot { it.isEmpty() },
+                filterText,
+                orderBy,
+                order
+            ) { folders, filterText, orderBy, order ->
+                var newContents = folders
+                    .last()
+                    .folderModel
+                    .contents
+                    .map { clingObject ->
+                        val type = clingObject.toItemType()
+
+                        val title = if (type == ItemType.CONTAINER) {
+                            clingObject.title.replace(UpnpContentRepositoryImpl.USER_DEFINED_PREFIX, "")
+                        } else {
+                            clingObject.title
+                        }
+
+                        ItemViewModel(
+                            id = clingObject.id,
+                            title = title,
+                            type = type,
+                            uri = clingObject.uri
+                        )
+                    }
+                    .filter { it.title.contains(filterText, ignoreCase = true) }
+
+                newContents = when (orderBy) {
+                    ViewState.OrderBy.Alphabetically -> when (order) {
+                        ViewState.SortOrder.Ascending -> newContents.sortedBy { it.title.lowercase() }
+                        ViewState.SortOrder.Descending -> newContents.sortedByDescending { it.title.lowercase() }
+                    }
+
+                    ViewState.OrderBy.Default -> newContents
+                }
+                val folderContents = FolderContents.Contents(newContents)
+
+                updateState { previousState ->
+                    previousState.copy(
+                        folderContents = folderContents,
+                        filterText = filterText,
+                        sortModel = previousState.sortModel.copy(orderBy = orderBy, order = order)
+                    )
+                }
+            }.flowOn(Dispatchers.Default).collect()
         }
     }
 
@@ -218,13 +241,28 @@ class MainViewModel @Inject constructor(
     }
 
     fun filterInput(text: String) {
-        viewModelScope.launch {
-            _filterText.emit(text)
-        }
+        viewModelScope.launch { filterText.emit(text) }
     }
 
     fun clearFilterText() {
         filterInput("")
+    }
+
+    fun setSortByDialogVisible(expanded: Boolean) {
+        updateState {
+            it.copy(sortModel = it.sortModel.copy(isSortByDialogExpanded = expanded))
+        }
+    }
+
+    fun setOrderBy(value: ViewState.OrderBy) {
+        orderBy.value = value
+    }
+
+    fun flipAscensionOrder() {
+        order.value = when (order.value) {
+            ViewState.SortOrder.Ascending -> ViewState.SortOrder.Descending
+            ViewState.SortOrder.Descending -> ViewState.SortOrder.Ascending
+        }
     }
 
     data class ViewState(
@@ -233,6 +271,9 @@ class MainViewModel @Inject constructor(
         val isLoading: Boolean,
         val lastPlayed: String?,
         val renderersState: RenderersState,
+        val sortModel: SortModel,
+        val folderContents: FolderContents,
+        val filterText: String,
     ) {
         data class RenderersState(
             val renderers: List<UpnpDevice>,
@@ -244,6 +285,25 @@ class MainViewModel @Inject constructor(
             val isSelectRendererDialogExpanded: Boolean,
         )
 
+        data class SortModel(
+            val orderBy: OrderBy,
+            val order: SortOrder,
+            val isSortByDialogExpanded: Boolean,
+        )
+
+        enum class OrderBy(val text: Int) {
+            Alphabetically(R.string.sort_by_alphabeticaly),
+
+            // TODO support later
+//            Size(R.string.sort_by_size),
+//            Date(R.string.sort_by_date),
+            Default(R.string.sort_by_default)
+        }
+
+        enum class SortOrder {
+            Ascending, Descending
+        }
+
         companion object {
             fun empty() = ViewState(
                 isSettingsDialogExpanded = false,
@@ -254,6 +314,13 @@ class MainViewModel @Inject constructor(
                 ),
                 renderersState = RenderersState(listOf(), null),
                 lastPlayed = null,
+                sortModel = SortModel(
+                    orderBy = OrderBy.Default,
+                    order = SortOrder.Ascending,
+                    isSortByDialogExpanded = false,
+                ),
+                folderContents = FolderContents.Empty,
+                filterText = "",
             )
         }
     }

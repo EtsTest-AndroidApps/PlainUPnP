@@ -28,7 +28,7 @@ data class ItemViewModel(
     val uri: String?,
 )
 
-sealed class FolderContents {
-    object Empty : FolderContents()
-    data class Contents(val items: List<ItemViewModel>) : FolderContents()
+sealed interface FolderContents {
+    object Empty : FolderContents
+    data class Contents(val items: List<ItemViewModel>) : FolderContents
 }

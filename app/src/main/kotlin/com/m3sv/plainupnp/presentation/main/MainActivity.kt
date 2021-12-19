@@ -11,6 +11,7 @@ import androidx.activity.viewModels
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,7 +51,6 @@ import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
 import com.m3sv.plainupnp.interfaces.LifecycleManager
 import com.m3sv.plainupnp.presentation.settings.SettingsActivity
-import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl.Companion.USER_DEFINED_PREFIX
 import com.m3sv.plainupnp.upnp.folder.Folder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -87,8 +87,6 @@ class MainActivity : ComponentActivity() {
             var showFilter by rememberSaveable { mutableStateOf(false) }
             val volume by viewModel.volume.collectAsState()
             val navigationBarState: List<Folder> by viewModel.navigation.collectAsState()
-            val folderContentsState: FolderContents by viewModel.folderContents.collectAsState()
-            val filterText by viewModel.filterText.collectAsState()
             val upnpState by viewModel.upnpState.collectAsState()
             val showThumbnails by viewModel.showThumbnails.collectAsState()
             val currentTheme by themeManager.theme.collectAsState()
@@ -112,7 +110,7 @@ class MainActivity : ComponentActivity() {
             val filter: ComposableFactory = {
                 AnimatedVisibility(visible = showFilter) {
                     Filter(
-                        initialValue = filterText,
+                        initialValue = viewState.filterText,
                         onValueChange = { viewModel.filterInput(it) },
                     ) {
                         showFilter = false
@@ -123,7 +121,7 @@ class MainActivity : ComponentActivity() {
 
             val folderContents: ModifierComposableFactory = { modifier ->
                 Folders(
-                    contents = folderContentsState,
+                    contents = viewState.folderContents,
                     showThumbnails = showThumbnails,
                     selectedId = viewState.lastPlayed,
                     modifier = modifier
@@ -152,11 +150,38 @@ class MainActivity : ComponentActivity() {
                     })
             }
 
+            val loadingIndicator: @Composable () -> Unit = {
+                LoadingIndicator(viewState.isLoading)
+            }
+
+            val sortingRow: @Composable (Modifier) -> Unit = { modifier ->
+                SortingRow(
+                    viewState.sortModel,
+                    modifier,
+                    onShowDialog = { viewModel.setSortByDialogVisible(true) },
+                    onDismissDialog = { viewModel.setSortByDialogVisible(false) },
+                    onChangeAscensionOrder = {
+                        viewModel.flipAscensionOrder()
+                    },
+                    onOrderByOptionClick = { option ->
+                        viewModel.setOrderBy(option)
+                    }
+                )
+            }
+
             AppTheme(currentTheme.isDarkTheme()) {
                 Scaffold(topBar = {
-                    Toolbar(settings) {
-                        if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                            navigationBar(Modifier)
+                    Box {
+                        OneToolbar(onBackClick = { onBackPressed() }) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                                    navigationBar(Modifier.weight(1f))
+                                    sortingRow(Modifier)
+                                } else {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                                settings()
+                            }
                         }
                     }
                 }) {
@@ -166,11 +191,11 @@ class MainActivity : ComponentActivity() {
                                 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN)
                                 Landscape(
                                     upnpState = upnpState,
-                                    loading = viewState.isLoading,
                                     showControls = showControls,
                                     floatingActionButton = { createFloatingActionButton() },
                                     filter = filter,
-                                    folderContents = folderContents
+                                    folderContents = folderContents,
+                                    loadingIndicator = loadingIndicator,
                                 )
                             }
                             else -> {
@@ -178,11 +203,12 @@ class MainActivity : ComponentActivity() {
                                 Portrait(
                                     upnpState = upnpState,
                                     folderContents = folderContents,
-                                    loading = viewState.isLoading,
+                                    loadingIndicator = loadingIndicator,
                                     showControls = showControls,
                                     floatingActionButton = { createFloatingActionButton() },
                                     filter = filter,
                                     navigationBar = navigationBar,
+                                    sortingRow = sortingRow,
                                 )
                             }
                         }
@@ -194,7 +220,6 @@ class MainActivity : ComponentActivity() {
                     }
 
                     val lifecycleState by lifecycleManager.lifecycleState.collectAsState()
-
                     LifecycleIndicator(lifecycleState = lifecycleState, ::finishApp)
                 }
             }
@@ -206,6 +231,95 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launchWhenCreated {
             viewModel.isConnectedToRenderer.collect { isConnectedToRenderer = it }
+        }
+    }
+
+    @Composable
+    private fun SortingRow(
+        sortModel: MainViewModel.ViewState.SortModel,
+        modifier: Modifier = Modifier,
+        onOrderByOptionClick: (MainViewModel.ViewState.OrderBy) -> Unit,
+        onShowDialog: () -> Unit,
+        onChangeAscensionOrder: () -> Unit,
+        onDismissDialog: () -> Unit,
+    ) {
+        Row(modifier = modifier, horizontalArrangement = Arrangement.End) {
+            Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onShowDialog, shape = RoundedCornerShape(16.dp)) {
+                        Row(modifier = Modifier.width(72.dp)) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_sort),
+                                contentDescription = null,
+                                tint = MaterialTheme.colors.onSurface
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text(
+                                stringResource(sortModel.orderBy.text),
+                                color = MaterialTheme.colors.onSurface,
+                                overflow = TextOverflow.Ellipsis,
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.padding(2.dp))
+
+                    Divider(
+                        color = MaterialTheme.colors.onSurface,
+                        modifier = Modifier
+                            .height(16.dp)
+                            .width(1.15.dp)
+                    )
+
+                    Spacer(modifier = Modifier.padding(2.dp))
+
+                    IconButton(
+                        onClick = onChangeAscensionOrder,
+                        modifier = Modifier.requiredSize(24.dp)
+                    ) {
+                        Crossfade(sortModel.order) { order ->
+                            when (order) {
+                                MainViewModel.ViewState.SortOrder.Ascending ->
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_arrow_up),
+                                        contentDescription = null
+                                    )
+
+                                MainViewModel.ViewState.SortOrder.Descending -> Icon(
+                                    painter = painterResource(R.drawable.ic_arrow_down),
+                                    contentDescription = null
+                                )
+                            }
+                        }
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = sortModel.isSortByDialogExpanded,
+                    onDismissRequest = onDismissDialog,
+                ) {
+                    for (option in MainViewModel.ViewState.OrderBy.values()) {
+                        DropdownMenuItem(onClick = {
+                            onOrderByOptionClick(option)
+                        }) {
+                            Row {
+                                Text(
+                                    text = stringResource(option.text),
+                                    maxLines = 1,
+                                    modifier = Modifier.weight(1f),
+                                    overflow = TextOverflow.Ellipsis
+                                )
+
+                                if (option == sortModel.orderBy) {
+                                    Icon(painterResource(R.drawable.ic_check), null)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -249,15 +363,21 @@ class MainActivity : ComponentActivity() {
     private fun Portrait(
         upnpState: UpnpRendererState,
         showControls: Boolean,
-        loading: Boolean,
         navigationBar: ModifierComposableFactory,
         folderContents: ModifierComposableFactory,
-        floatingActionButton: @Composable BoxScope.() -> Unit,
         filter: ComposableFactory,
+        loadingIndicator: @Composable () -> Unit,
+        floatingActionButton: @Composable BoxScope.() -> Unit,
+        sortingRow: @Composable (Modifier) -> Unit,
     ) {
         Column {
             navigationBar(Modifier.padding(start = 16.dp))
-            LoadingIndicator(loading)
+            loadingIndicator()
+            sortingRow(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(end = 16.dp)
+            )
 
             Row(modifier = Modifier.weight(1f)) {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -284,13 +404,13 @@ class MainActivity : ComponentActivity() {
     private fun Landscape(
         upnpState: UpnpRendererState,
         showControls: Boolean,
-        loading: Boolean,
         folderContents: ModifierComposableFactory,
         floatingActionButton: ComposableFactory,
         filter: ComposableFactory,
+        loadingIndicator: @Composable () -> Unit,
     ) {
         Column {
-            LoadingIndicator(loading)
+            loadingIndicator()
 
             val transition = updateTransition(targetState = showControls, label = "")
             val folderWeight by transition.animateFloat(label = "") { showControls ->
@@ -345,6 +465,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     private fun Folders(
         contents: FolderContents,
@@ -363,7 +484,7 @@ class MainActivity : ComponentActivity() {
                     )
 
                 LazyColumn(modifier = modifier) {
-                    items(contents.items) { item ->
+                    items(contents.items, key = { it.id }) { item ->
                         val color = animateColorAsState(
                             targetValue = if (selectedId == item.id) {
                                 MaterialTheme.colors.primary.copy(alpha = 0.35f)
@@ -382,7 +503,8 @@ class MainActivity : ComponentActivity() {
                                         it.background(color.value)
                                     else
                                         it
-                                },
+                                }
+                                .animateItemPlacement(),
                         ) {
                             Spacer(modifier = Modifier.padding(8.dp))
                             val imageModifier = Modifier.size(32.dp)
@@ -422,14 +544,8 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            val title = if (item.type == ItemType.CONTAINER) {
-                                item.title.replace(USER_DEFINED_PREFIX, "")
-                            } else {
-                                item.title
-                            }
-
                             Text(
-                                text = title,
+                                text = item.title,
                                 maxLines = 1,
                                 modifier = Modifier.padding(8.dp),
                                 style = MaterialTheme.typography.subtitle1,
@@ -610,12 +726,16 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.padding(horizontal = 8.dp)
                         )
 
-                        AnimatedVisibility(selectedItem != null) {
-                            Icon(painterResource(id = R.drawable.ic_close),
+                        AnimatedVisibility(
+                            selectedItem != null
+                        ) {
+                            Icon(
+                                painterResource(id = R.drawable.ic_close),
                                 contentDescription = null,
                                 modifier = Modifier.clickable {
                                     if (selectedItem != null) viewModel.selectRenderer(selectedItem)
-                                })
+                                }
+                            )
                         }
                     }
                 }
@@ -625,7 +745,6 @@ class MainActivity : ComponentActivity() {
         DropdownMenu(
             expanded = selectRendererState.isSelectRendererDialogExpanded,
             onDismissRequest = onDismissDialog,
-            offset = DpOffset((16).dp, (0).dp),
         ) {
             for (item in renderers) {
                 DropdownMenuItem(onClick = {
@@ -635,22 +754,6 @@ class MainActivity : ComponentActivity() {
                         Icon(painterResource(R.drawable.ic_check), null)
                     }
                     Text(text = item.friendlyName, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
-    }
-
-    @Composable
-    private fun Toolbar(
-        settingsMenu: @Composable RowScope.() -> Unit,
-        content: @Composable RowScope.() -> Unit = {}
-    ) {
-        Box {
-            OneToolbar(onBackClick = { onBackPressed() }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    content()
-                    Spacer(modifier = Modifier.weight(1f))
-                    settingsMenu()
                 }
             }
         }
