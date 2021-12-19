@@ -41,7 +41,7 @@ private const val CONTENT_DIRECTORY = "ContentDirectory"
 sealed interface Result {
     object Success : Result
     enum class Error : Result {
-        GENERIC, RENDERER_NOT_SELECTED, AV_SERVICE_NOT_FOUND
+        GENERIC, AV_SERVICE_NOT_FOUND
     }
 }
 
@@ -269,13 +269,13 @@ class UpnpManagerImpl @Inject constructor(
         }
     }
 
-    override suspend fun itemClick(id: String): Result = withContext(Dispatchers.IO) {
-        val item: ClingDIDLObject = contentCache[id] ?: return@withContext Result.Error.GENERIC
+    override suspend fun itemClick(id: String): Pair<Result, ClingDIDLObject?> = withContext(Dispatchers.IO) {
+        val item: ClingDIDLObject = contentCache[id] ?: return@withContext Result.Error.GENERIC to null
 
         when (item) {
-            is ClingContainer -> safeNavigateTo(folderId = id, folderName = item.title)
-            is ClingMedia -> playItem(item)
-            is MiscItem -> Result.Error.GENERIC
+            is ClingContainer -> safeNavigateTo(folderId = id, folderName = item.title) to item
+            is ClingMedia -> playItem(item) to item
+            is MiscItem -> Result.Error.GENERIC to null
         }
     }
 

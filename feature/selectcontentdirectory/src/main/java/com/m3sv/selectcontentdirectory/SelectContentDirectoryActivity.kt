@@ -105,7 +105,6 @@ class SelectContentDirectoryActivity : ComponentActivity() {
                                                     when (viewModel.selectContentDirectory(item)) {
                                                         Result.Success -> handleSelectDirectorySuccess()
                                                         Result.Error.GENERIC,
-                                                        Result.Error.RENDERER_NOT_SELECTED,
                                                         Result.Error.AV_SERVICE_NOT_FOUND -> withContext(Dispatchers.Main) { handleSelectDirectoryError() }
                                                     }
 

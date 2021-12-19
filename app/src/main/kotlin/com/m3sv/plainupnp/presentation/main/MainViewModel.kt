@@ -3,10 +3,10 @@ package com.m3sv.plainupnp.presentation.main
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
-import com.m3sv.plainupnp.common.util.pass
 import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
 import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
+import com.m3sv.plainupnp.upnp.didl.ClingMedia
 import com.m3sv.plainupnp.upnp.folder.Folder
 import com.m3sv.plainupnp.upnp.manager.Result
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
@@ -94,6 +94,7 @@ class MainViewModel @Inject constructor(
         .upnpRendererState
         .stateIn(viewModelScope, SharingStarted.Eagerly, UpnpRendererState.Empty)
 
+    private val itemClicks: MutableSharedFlow<String> = MutableSharedFlow()
     private val isSelectRendererButtonExpanded: MutableStateFlow<Boolean> = MutableStateFlow(false)
     private val isSelectRendererDialogExpanded = MutableStateFlow(false)
 
@@ -124,6 +125,16 @@ class MainViewModel @Inject constructor(
                 }
             }.collect()
         }
+
+        viewModelScope.launch {
+            itemClicks.onEach { id ->
+                updateState { it.copy(isLoading = true) }
+                val (result, item) = upnpManager.itemClick(id)
+                val playingNow = if (result is Result.Success && item is ClingMedia) id else null
+
+                updateState { it.copy(isLoading = false, lastPlayed = playingNow ?: it.lastPlayed) }
+            }.collect()
+        }
     }
 
     private inline fun updateState(block: (previousState: ViewState) -> ViewState) {
@@ -147,16 +158,7 @@ class MainViewModel @Inject constructor(
 
     fun itemClick(id: String) {
         viewModelScope.launch {
-            updateState { it.copy(isLoading = true) }
-
-            when (upnpManager.itemClick(id)) {
-                Result.Error.RENDERER_NOT_SELECTED -> expandSelectRendererButton()
-                Result.Success,
-                Result.Error.AV_SERVICE_NOT_FOUND,
-                Result.Error.GENERIC -> pass
-            }
-
-            updateState { it.copy(isLoading = false) }
+            itemClicks.emit(id)
         }
     }
 
@@ -229,6 +231,7 @@ class MainViewModel @Inject constructor(
         val isSettingsDialogExpanded: Boolean,
         val selectRendererState: SelectRendererState,
         val isLoading: Boolean,
+        val lastPlayed: String?,
         val renderersState: RenderersState,
     ) {
         data class RenderersState(
@@ -249,7 +252,8 @@ class MainViewModel @Inject constructor(
                     isSelectRendererButtonExpanded = false,
                     isSelectRendererDialogExpanded = false
                 ),
-                renderersState = RenderersState(listOf(), null)
+                renderersState = RenderersState(listOf(), null),
+                lastPlayed = null,
             )
         }
     }

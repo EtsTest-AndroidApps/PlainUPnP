@@ -2,6 +2,7 @@ package com.m3sv.plainupnp.upnp.manager
 
 import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
+import com.m3sv.plainupnp.upnp.didl.ClingDIDLObject
 import com.m3sv.plainupnp.upnp.folder.Folder
 import com.m3sv.plainupnp.upnp.playback.PlaybackManager
 import com.m3sv.plainupnp.upnp.volume.UpnpVolumeManager
@@ -17,7 +18,7 @@ interface UpnpManager : UpnpVolumeManager, PlaybackManager {
 
     suspend fun navigateBack()
     suspend fun navigateTo(folder: Folder)
-    suspend fun itemClick(id: String): Result
+    suspend fun itemClick(id: String): Pair<Result, ClingDIDLObject?>
     suspend fun seekTo(progress: Int)
     suspend fun selectContentDirectory(device: UpnpDevice): Result
     suspend fun selectRenderer(device: UpnpDevice)

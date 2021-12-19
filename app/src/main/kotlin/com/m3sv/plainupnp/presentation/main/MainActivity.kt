@@ -12,6 +12,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -124,6 +125,7 @@ class MainActivity : ComponentActivity() {
                 Folders(
                     contents = folderContentsState,
                     showThumbnails = showThumbnails,
+                    selectedId = viewState.lastPlayed,
                     modifier = modifier
                 )
             }
@@ -347,6 +349,7 @@ class MainActivity : ComponentActivity() {
     private fun Folders(
         contents: FolderContents,
         showThumbnails: Boolean,
+        selectedId: String?,
         modifier: Modifier = Modifier
     ) {
         when (contents) {
@@ -361,11 +364,25 @@ class MainActivity : ComponentActivity() {
 
                 LazyColumn(modifier = modifier) {
                     items(contents.items) { item ->
+                        val color = animateColorAsState(
+                            targetValue = if (selectedId == item.id) {
+                                MaterialTheme.colors.primary.copy(alpha = 0.35f)
+                            } else {
+                                Color.Unspecified
+                            }
+                        )
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { viewModel.itemClick(item.id) }
+                                .let {
+                                    if (selectedId == item.id)
+                                        it.background(color.value)
+                                    else
+                                        it
+                                },
                         ) {
                             Spacer(modifier = Modifier.padding(8.dp))
                             val imageModifier = Modifier.size(32.dp)
