@@ -23,13 +23,11 @@ class UpnpRepository @Inject constructor(
         directoryID: String,
     ) = browseAction(service, directoryID)
 
-    suspend fun getPositionInfo(service: Service<*, *>): PositionInfo {
-        return getPositionInfoAction.getPositionInfo(service)
-    }
+    suspend fun getPositionInfo(service: Service<*, *>): PositionInfo? =
+        getPositionInfoAction.getPositionInfo(service)
 
-    suspend fun getTransportInfo(service: Service<*, *>): TransportInfo {
-        return getTransportInfoAction.getTransportInfo(service)
-    }
+    suspend fun getTransportInfo(service: Service<*, *>): TransportInfo? =
+        getTransportInfoAction.getTransportInfo(service)
 
     suspend fun seekTo(service: Service<*, *>, time: String) {
         seekToAction.seekTo(service, time)

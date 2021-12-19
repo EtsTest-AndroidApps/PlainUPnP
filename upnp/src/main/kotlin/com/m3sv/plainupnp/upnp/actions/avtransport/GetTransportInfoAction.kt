@@ -1,5 +1,6 @@
 package com.m3sv.plainupnp.upnp.actions.avtransport
 
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.fourthline.cling.controlpoint.ControlPoint
 import org.fourthline.cling.model.action.ActionInvocation
 import org.fourthline.cling.model.message.UpnpResponse
@@ -8,18 +9,17 @@ import org.fourthline.cling.support.avtransport.callback.GetTransportInfo
 import org.fourthline.cling.support.model.TransportInfo
 import javax.inject.Inject
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 
 class GetTransportInfoAction @Inject constructor(private val controlPoint: ControlPoint) {
 
-    suspend fun getTransportInfo(service: Service<*, *>): TransportInfo = suspendCoroutine { continuation ->
+    suspend fun getTransportInfo(service: Service<*, *>): TransportInfo? = suspendCancellableCoroutine { continuation ->
         val action = object : GetTransportInfo(service) {
             override fun received(
                 invocation: ActionInvocation<out Service<*, *>>?,
                 transportInfo: TransportInfo
             ) {
-                continuation.resume(transportInfo)
+                if (continuation.isActive)
+                    continuation.resume(transportInfo)
             }
 
             override fun failure(
@@ -27,11 +27,13 @@ class GetTransportInfoAction @Inject constructor(private val controlPoint: Contr
                 p1: UpnpResponse?,
                 p2: String?
             ) {
-                continuation.resumeWithException(IllegalStateException("Failed to get transport info"))
+                if (continuation.isActive)
+                    continuation.resume(null)
             }
         }
 
-        controlPoint.execute(action)
+        val future = controlPoint.execute(action)
+        continuation.invokeOnCancellation { runCatching { future.cancel(true) } }
     }
 }
 

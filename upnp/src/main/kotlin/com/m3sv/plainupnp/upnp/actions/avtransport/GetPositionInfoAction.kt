@@ -1,5 +1,6 @@
 package com.m3sv.plainupnp.upnp.actions.avtransport
 
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.fourthline.cling.controlpoint.ControlPoint
 import org.fourthline.cling.model.action.ActionInvocation
 import org.fourthline.cling.model.message.UpnpResponse
@@ -9,12 +10,10 @@ import org.fourthline.cling.support.model.PositionInfo
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 
 class GetPositionInfoAction @Inject constructor(private val controlPoint: ControlPoint) {
 
-    suspend fun getPositionInfo(service: Service<*, *>): PositionInfo = suspendCoroutine { continuation ->
+    suspend fun getPositionInfo(service: Service<*, *>): PositionInfo? = suspendCancellableCoroutine { continuation ->
         val tag = "AV"
 
         Timber.tag(tag).d("Get position info")
@@ -25,7 +24,8 @@ class GetPositionInfoAction @Inject constructor(private val controlPoint: Contro
                 positionInfo: PositionInfo,
             ) {
                 Timber.tag(tag).d("Received position info")
-                continuation.resume(positionInfo)
+                if (continuation.isActive)
+                    continuation.resume(positionInfo)
             }
 
             override fun failure(
@@ -34,10 +34,12 @@ class GetPositionInfoAction @Inject constructor(private val controlPoint: Contro
                 p2: String?,
             ) {
                 Timber.tag(tag).e("Failed to get position info")
-                continuation.resumeWithException(IllegalStateException("Failed to get position info"))
+                if (continuation.isActive)
+                    continuation.resume(null)
             }
         }
 
-        controlPoint.execute(action)
+        val future = controlPoint.execute(action)
+        continuation.invokeOnCancellation { runCatching { future.cancel(true) } }
     }
 }

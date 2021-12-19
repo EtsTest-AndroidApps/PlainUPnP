@@ -1,6 +1,6 @@
 package com.m3sv.plainupnp.upnp.volume
 
-import com.m3sv.plainupnp.upnp.actions.renderingcontrol.*
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.fourthline.cling.model.meta.Service
@@ -13,21 +13,35 @@ class VolumeRepository @Inject constructor(
     private val setVolumeAction: SetVolumeAction,
     private val muteVolumeAction: MuteVolumeAction,
 ) {
-    private val volumeChannel = MutableSharedFlow<Int>()
+    private val volumeChannel = MutableSharedFlow<Volume>()
+    val volumeFlow: Flow<Volume> = volumeChannel
 
-    val volumeFlow: Flow<Int> = volumeChannel
+    suspend fun raiseVolume(service: Service<*, *>, step: Int) {
+        val volume = raiseVolumeAction(service, step) ?: return
+        postVolume(volume)
+    }
 
-    suspend fun raiseVolume(service: Service<*, *>, step: Int) = postVolume(raiseVolumeAction(service, step))
+    suspend fun lowerVolume(service: Service<*, *>, step: Int) {
+        val volume = lowerVolumeAction(service, step) ?: return
+        postVolume(volume)
+    }
 
-    suspend fun lowerVolume(service: Service<*, *>, step: Int) = postVolume(lowerVolumeAction(service, step))
+    suspend fun muteVolume(service: Service<*, *>, mute: Boolean): Boolean {
+        return muteVolumeAction(service, mute)
+    }
 
-    suspend fun muteVolume(service: Service<*, *>, mute: Boolean) = muteVolumeAction(service, mute)
+    suspend fun setVolume(service: Service<*, *>, newVolume: Volume) {
+        val volume = setVolumeAction(service, newVolume) ?: return
+        postVolume(volume)
+    }
 
-    suspend fun setVolume(service: Service<*, *>, volume: Int) = postVolume(setVolumeAction(service, volume))
+    suspend fun getVolume(service: Service<*, *>): Volume? {
+        val volume = getVolumeAction(service) ?: return null
+        postVolume(volume)
+        return volume
+    }
 
-    suspend fun getVolume(service: Service<*, *>): Int = getVolumeAction(service).also { postVolume(it) }
-
-    private suspend fun postVolume(volume: Int) {
+    private suspend fun postVolume(volume: Volume) {
         volumeChannel.emit(volume)
     }
 }

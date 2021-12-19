@@ -6,6 +6,7 @@ import com.m3sv.plainupnp.common.preferences.PreferencesRepository
 import com.m3sv.plainupnp.common.util.pass
 import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
 import com.m3sv.plainupnp.upnp.folder.Folder
 import com.m3sv.plainupnp.upnp.manager.Result
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
@@ -16,9 +17,11 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-sealed class VolumeUpdate(val volume: Int) {
-    class Show(volume: Int) : VolumeUpdate(volume)
-    class Hide(volume: Int) : VolumeUpdate(volume)
+sealed interface VolumeUpdate {
+    val volume: Volume
+
+    data class Show(override val volume: Volume) : VolumeUpdate
+    data class Hide(override val volume: Volume) : VolumeUpdate
 }
 
 @HiltViewModel
@@ -44,7 +47,7 @@ class MainViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Lazily,
-            initialValue = VolumeUpdate.Hide(-1)
+            initialValue = VolumeUpdate.Hide(Volume(-1))
         )
 
     private val _filterText: MutableStateFlow<String> = MutableStateFlow("")
@@ -242,7 +245,10 @@ class MainViewModel @Inject constructor(
             fun empty() = ViewState(
                 isSettingsDialogExpanded = false,
                 isLoading = false,
-                selectRendererState = SelectRendererState(false, false),
+                selectRendererState = SelectRendererState(
+                    isSelectRendererButtonExpanded = false,
+                    isSelectRendererDialogExpanded = false
+                ),
                 renderersState = RenderersState(listOf(), null)
             )
         }

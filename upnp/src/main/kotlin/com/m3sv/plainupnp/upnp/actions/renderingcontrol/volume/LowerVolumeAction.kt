@@ -1,8 +1,7 @@
-package com.m3sv.plainupnp.upnp.actions.renderingcontrol
+package com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume
 
 import org.fourthline.cling.model.meta.Service
 import javax.inject.Inject
-import kotlin.math.abs
 
 class LowerVolumeAction @Inject constructor(
     private val setVolumeAction: SetVolumeAction,
@@ -11,13 +10,13 @@ class LowerVolumeAction @Inject constructor(
     suspend operator fun invoke(
         renderingService: Service<*, *>,
         step: Int
-    ): Int {
-        val currentVolume = getVolumeAction(renderingService)
+    ): Volume? {
+        val currentVolume = getVolumeAction(renderingService) ?: return null
 
-        var delta = currentVolume - step
+        var delta = currentVolume - Volume(step)
 
-        if (delta < 0) {
-            delta += abs(delta)
+        if (delta.value < 0) {
+            delta = Volume(0)
         }
 
         return setVolumeAction(renderingService, delta)

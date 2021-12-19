@@ -1,5 +1,6 @@
 package com.m3sv.plainupnp.upnp.actions.avtransport
 
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.fourthline.cling.controlpoint.ControlPoint
 import org.fourthline.cling.model.action.ActionInvocation
 import org.fourthline.cling.model.message.UpnpResponse
@@ -8,17 +9,17 @@ import org.fourthline.cling.support.avtransport.callback.Stop
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 class StopAction @Inject constructor(private val controlPoint: ControlPoint) {
 
-    suspend fun stop(service: Service<*, *>): Boolean = suspendCoroutine { continuation ->
+    suspend fun stop(service: Service<*, *>): Boolean = suspendCancellableCoroutine { continuation ->
         val tag = "AV"
         Timber.tag(tag).d("Stop called")
         val action = object : Stop(service) {
             override fun success(invocation: ActionInvocation<out Service<*, *>>?) {
                 Timber.tag(tag).d("Stop success")
-                continuation.resume(true)
+                if (continuation.isActive)
+                    continuation.resume(true)
             }
 
             override fun failure(
@@ -27,10 +28,12 @@ class StopAction @Inject constructor(private val controlPoint: ControlPoint) {
                 p2: String?,
             ) {
                 Timber.tag(tag).e("Stop failed")
-                continuation.resume(false)
+                if (continuation.isActive)
+                    continuation.resume(false)
             }
         }
 
-        controlPoint.execute(action)
+        val future = controlPoint.execute(action)
+        continuation.invokeOnCancellation { runCatching { future.cancel(true) } }
     }
 }

@@ -1,42 +1,41 @@
-package com.m3sv.plainupnp.upnp.actions.renderingcontrol
+package com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume
 
 import com.m3sv.plainupnp.logging.Logger
-import com.m3sv.plainupnp.upnp.actions.Action
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.fourthline.cling.controlpoint.ControlPoint
 import org.fourthline.cling.model.action.ActionInvocation
 import org.fourthline.cling.model.message.UpnpResponse
 import org.fourthline.cling.model.meta.Service
 import org.fourthline.cling.support.renderingcontrol.callback.SetMute
 import javax.inject.Inject
+import kotlin.coroutines.resume
 
 class MuteVolumeAction @Inject constructor(
-    controlPoint: ControlPoint,
+    private val controlPoint: ControlPoint,
     private val logger: Logger
-) :
-    Action<Unit, Unit>(controlPoint) {
-
-    // Don't know what is happening here, but Kotlin compiler complains about this
-    // Put empty method here, figure out this later
-    override suspend fun invoke(
-        service: Service<*, *>,
-        vararg arguments: Unit
-    ) {
-        error("Use method with Boolean arguments")
-    }
-
+) {
     suspend operator fun invoke(
         service: Service<*, *>,
-        vararg arguments: Boolean
-    ) {
-        val action = object : SetMute(service, arguments[0]) {
+        mute: Boolean
+    ) = suspendCancellableCoroutine<Boolean> { continuation ->
+        val action = object : SetMute(service, mute) {
             override fun failure(
                 invocation: ActionInvocation<out Service<*, *>>?,
                 operation: UpnpResponse?,
                 defaultMsg: String?
             ) {
                 logger.e("Failed to mute volume")
+                if (continuation.isActive)
+                    continuation.resume(false)
+            }
+
+            override fun success(invocation: ActionInvocation<out Service<*, *>>?) {
+                if (continuation.isActive)
+                    continuation.resume(true)
             }
         }
-        controlPoint.execute(action)
+
+        val future = controlPoint.execute(action)
+        continuation.invokeOnCancellation { runCatching { future.cancel(true) } }
     }
 }

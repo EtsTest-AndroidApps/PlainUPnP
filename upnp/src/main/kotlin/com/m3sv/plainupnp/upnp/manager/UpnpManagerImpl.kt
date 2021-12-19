@@ -7,6 +7,7 @@ import com.m3sv.plainupnp.logging.Logger
 import com.m3sv.plainupnp.upnp.ContentUpdateState
 import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl
 import com.m3sv.plainupnp.upnp.UpnpRepository
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
 import com.m3sv.plainupnp.upnp.didl.ClingContainer
 import com.m3sv.plainupnp.upnp.didl.ClingDIDLObject
 import com.m3sv.plainupnp.upnp.didl.ClingMedia
@@ -53,7 +54,7 @@ class UpnpManagerImpl @Inject constructor(
     private val contentRepository: UpnpContentRepositoryImpl,
     private val logger: Logger
 ) : UpnpManager {
-    override val volumeFlow: Flow<Int> = volumeRepository.volumeFlow
+    override val volumeFlow: Flow<Volume> = volumeRepository.volumeFlow
     private val _selectedRenderer: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
     override val selectedRenderer: StateFlow<UpnpDevice?> = _selectedRenderer.asStateFlow()
     private val selectedContentDirectory: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
@@ -360,20 +361,13 @@ class UpnpManagerImpl @Inject constructor(
     override suspend fun setVolume(volume: Int) {
         withContext(Dispatchers.IO) {
             runCatching {
-                withRcService { service -> volumeRepository.setVolume(service, volume) }
+                withRcService { service -> volumeRepository.setVolume(service, Volume(volume)) }
             }.onFailure { logger.e(it, "Failed to set volume with value $volume") }
         }
     }
 
-    override suspend fun getVolume(): Int = withContext(Dispatchers.IO) {
-        val result = runCatching {
-            withRcService { service -> volumeRepository.getVolume(service) } ?: 0
-        }.onFailure { logger.e(it, "Failed to get volume") }
-
-        if (result.isSuccess)
-            result.getOrThrow()
-        else
-            0
+    override suspend fun getVolume(): Volume = withContext(Dispatchers.IO) {
+        withRcService { service -> volumeRepository.getVolume(service) } ?: Volume(0)
     }
 
     override suspend fun navigateTo(folder: Folder) {

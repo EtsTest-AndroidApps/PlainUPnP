@@ -222,7 +222,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 Surface(modifier = Modifier.padding(16.dp)) {
                     Row {
-                        val volume = volumeUpdate.volume
+                        val volume = volumeUpdate.volume.value
                         val icon = when {
                             volume < 5 -> R.drawable.ic_volume_mute
                             volume < 35 -> R.drawable.ic_volume_down
