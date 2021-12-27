@@ -8,24 +8,62 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.animation.*
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.*
+import androidx.compose.material.Card
+import androidx.compose.material.Divider
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.FloatingActionButton
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.LinearProgressIndicator
+import androidx.compose.material.LocalContentColor
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.OutlinedTextField
+import androidx.compose.material.Scaffold
+import androidx.compose.material.Slider
+import androidx.compose.material.Surface
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -47,9 +85,9 @@ import com.m3sv.plainupnp.compose.AppTheme
 import com.m3sv.plainupnp.compose.LifecycleIndicator
 import com.m3sv.plainupnp.compose.OneToolbar
 import com.m3sv.plainupnp.compose.util.isDarkTheme
-import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
 import com.m3sv.plainupnp.interfaces.LifecycleManager
+import com.m3sv.plainupnp.presentation.main.MainViewModel.ViewState
 import com.m3sv.plainupnp.presentation.settings.SettingsActivity
 import com.m3sv.plainupnp.upnp.folder.Folder
 import dagger.hilt.android.AndroidEntryPoint
@@ -60,7 +98,6 @@ import kotlinx.coroutines.launch
 import org.fourthline.cling.support.model.TransportState
 import javax.inject.Inject
 
-typealias ComposableFactory = @Composable () -> Unit
 typealias ModifierComposableFactory = @Composable (Modifier) -> Unit
 
 @AndroidEntryPoint
@@ -82,8 +119,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            val viewState: MainViewModel.ViewState by viewModel.viewState.collectAsState()
-
+            val viewState: ViewState by viewModel.viewState.collectAsState()
             var showFilter by rememberSaveable { mutableStateOf(false) }
             val volume by viewModel.volume.collectAsState()
             val navigationBarState: List<Folder> by viewModel.navigation.collectAsState()
@@ -93,8 +129,7 @@ class MainActivity : ComponentActivity() {
             val showControls = upnpState !is UpnpRendererState.Empty
             val configuration = LocalConfiguration.current
 
-            @Composable
-            fun createFloatingActionButton() {
+            val floatingActionButton: @Composable (Modifier) -> Unit = { modifier ->
                 RendererFloatingActionButton(
                     selectRendererState = viewState.selectRendererState,
                     renderers = viewState.renderersState.renderers,
@@ -103,11 +138,14 @@ class MainActivity : ComponentActivity() {
                         viewModel.collapseSelectRendererButton()
                         viewModel.collapseSelectRendererDialog()
                     },
-                    onExpandButton = { lifecycleScope.launch { viewModel.expandSelectRendererButton() } },
-                    onExpandDialog = { viewModel.expandSelectRendererDialog() })
+                    onExpandButton = viewModel::expandSelectRendererButton,
+                    onExpandDialog = viewModel::expandSelectRendererDialog,
+                    onCancelClick = viewModel::unselectRenderer,
+                    modifier = modifier
+                )
             }
 
-            val filter: ComposableFactory = {
+            val filter: @Composable () -> Unit = {
                 AnimatedVisibility(visible = showFilter) {
                     Filter(
                         initialValue = viewState.filterText,
@@ -192,7 +230,7 @@ class MainActivity : ComponentActivity() {
                                 Landscape(
                                     upnpState = upnpState,
                                     showControls = showControls,
-                                    floatingActionButton = { createFloatingActionButton() },
+                                    floatingActionButton = floatingActionButton,
                                     filter = filter,
                                     folderContents = folderContents,
                                     loadingIndicator = loadingIndicator,
@@ -205,7 +243,7 @@ class MainActivity : ComponentActivity() {
                                     folderContents = folderContents,
                                     loadingIndicator = loadingIndicator,
                                     showControls = showControls,
-                                    floatingActionButton = { createFloatingActionButton() },
+                                    floatingActionButton = floatingActionButton,
                                     filter = filter,
                                     navigationBar = navigationBar,
                                     sortingRow = sortingRow,
@@ -236,9 +274,9 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun SortingRow(
-        sortModel: MainViewModel.ViewState.SortModel,
+        sortModel: ViewState.SortModel,
         modifier: Modifier = Modifier,
-        onOrderByOptionClick: (MainViewModel.ViewState.OrderBy) -> Unit,
+        onOrderByOptionClick: (ViewState.OrderBy) -> Unit,
         onShowDialog: () -> Unit,
         onChangeAscensionOrder: () -> Unit,
         onDismissDialog: () -> Unit,
@@ -281,13 +319,13 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Crossfade(sortModel.order) { order ->
                             when (order) {
-                                MainViewModel.ViewState.SortOrder.Ascending ->
+                                ViewState.SortOrder.Ascending ->
                                     Icon(
                                         painter = painterResource(R.drawable.ic_arrow_up),
                                         contentDescription = null
                                     )
 
-                                MainViewModel.ViewState.SortOrder.Descending -> Icon(
+                                ViewState.SortOrder.Descending -> Icon(
                                     painter = painterResource(R.drawable.ic_arrow_down),
                                     contentDescription = null
                                 )
@@ -300,21 +338,19 @@ class MainActivity : ComponentActivity() {
                     expanded = sortModel.isSortByDialogExpanded,
                     onDismissRequest = onDismissDialog,
                 ) {
-                    for (option in MainViewModel.ViewState.OrderBy.values()) {
+                    for (option in ViewState.OrderBy.values()) {
                         DropdownMenuItem(onClick = {
                             onOrderByOptionClick(option)
                         }) {
-                            Row {
-                                Text(
-                                    text = stringResource(option.text),
-                                    maxLines = 1,
-                                    modifier = Modifier.weight(1f),
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                            Text(
+                                text = stringResource(option.text),
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f),
+                                overflow = TextOverflow.Ellipsis
+                            )
 
-                                if (option == sortModel.orderBy) {
-                                    Icon(painterResource(R.drawable.ic_check), null)
-                                }
+                            if (option == sortModel.orderBy) {
+                                Icon(painterResource(R.drawable.ic_check), null)
                             }
                         }
                     }
@@ -365,9 +401,9 @@ class MainActivity : ComponentActivity() {
         showControls: Boolean,
         navigationBar: ModifierComposableFactory,
         folderContents: ModifierComposableFactory,
-        filter: ComposableFactory,
+        filter: @Composable () -> Unit,
         loadingIndicator: @Composable () -> Unit,
-        floatingActionButton: @Composable BoxScope.() -> Unit,
+        floatingActionButton: @Composable (Modifier) -> Unit,
         sortingRow: @Composable (Modifier) -> Unit,
     ) {
         Column {
@@ -387,7 +423,7 @@ class MainActivity : ComponentActivity() {
                         visible = !showControls,
                         modifier = Modifier.align(Alignment.BottomEnd)
                     ) {
-                        floatingActionButton()
+                        floatingActionButton(Modifier)
                     }
                 }
             }
@@ -405,49 +441,44 @@ class MainActivity : ComponentActivity() {
         upnpState: UpnpRendererState,
         showControls: Boolean,
         folderContents: ModifierComposableFactory,
-        floatingActionButton: ComposableFactory,
-        filter: ComposableFactory,
+        floatingActionButton: @Composable (Modifier) -> Unit,
+        filter: @Composable () -> Unit,
         loadingIndicator: @Composable () -> Unit,
     ) {
         Column {
             loadingIndicator()
 
-            val transition = updateTransition(targetState = showControls, label = "")
-            val folderWeight by transition.animateFloat(label = "") { showControls ->
-                if (showControls)
-                    1f
-                else
-                    10f
-            }
-
-            val controlsWeight by transition.animateFloat(label = "") { showControls ->
-                if (showControls)
-                    1f
-                else
-                    3f
-            }
-
-            Row(modifier = Modifier.fillMaxSize()) {
-                Column(modifier = Modifier.weight(folderWeight)) {
-                    folderContents(Modifier.weight(1f))
-                    filter()
-                }
-
-                Crossfade(
-                    targetState = showControls,
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .weight(controlsWeight)
-                ) { showControls ->
-                    if (showControls) {
-                        Controls(upnpState, 0.dp, 8.dp)
-                    } else {
-                        Row(modifier = Modifier.fillMaxHeight(), verticalAlignment = Alignment.Bottom) {
-                            Spacer(modifier = Modifier.weight(1f))
-                            floatingActionButton()
-                        }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                Row {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        folderContents(Modifier.weight(1f))
+                        filter()
                     }
+
+                    Controls(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .animateContentSize(animationSpec = tween())
+                            .then(
+                                if (showControls) {
+                                    Modifier.weight(1f)
+                                } else {
+                                    Modifier.width(0.dp)
+                                }
+                            ),
+                        upnpState = upnpState,
+                        verticalPadding = 8.dp,
+                        elevation = 0.dp
+                    )
                 }
+
+                floatingActionButton(Modifier.align(Alignment.BottomEnd))
             }
         }
     }
@@ -610,81 +641,81 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun Controls(upnpState: UpnpRendererState, elevation: Dp, verticalPadding: Dp = 0.dp) {
+    private fun Controls(
+        upnpState: UpnpRendererState,
+        verticalPadding: Dp,
+        elevation: Dp,
+        modifier: Modifier = Modifier,
+    ) {
         val defaultState: UpnpRendererState.Default? = upnpState as? UpnpRendererState.Default
 
         Surface(
+            modifier = modifier,
             shape = RoundedCornerShape(topStart = AppTheme.cornerRadius, topEnd = AppTheme.cornerRadius),
-            elevation = elevation,
+            elevation = elevation
         ) {
-            Row {
-                Column {
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceBetween,
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+                    .padding(vertical = verticalPadding)
+            ) {
+                Row {
+                    Text(defaultState?.title ?: "")
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_close),
+                        contentDescription = null,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(
-                                horizontal = 16.dp,
-                                vertical = verticalPadding
-                            )
-                    ) {
-                        Text(defaultState?.title ?: "")
+                            .size(24.dp)
+                            .clickable {
+                                viewModel.playerButtonClick(PlayerButton.STOP)
+                            }
+                    )
+                }
 
-                        Surface {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_close),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .clickable {
-                                        viewModel.playerButtonClick(PlayerButton.STOP)
-                                    }
-                            )
+                Slider(
+                    value = (defaultState?.elapsedPercent ?: 0).toFloat() / 100,
+                    onValueChange = {
+                        viewModel.moveTo((it * 100).toInt())
+                    })
+
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Text(defaultState?.position ?: "00:00")
+                    Text("/")
+                    Text(defaultState?.duration ?: "00:00")
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    val iconSize = Modifier.size(32.dp)
+
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_skip_previous),
+                        contentDescription = null,
+                        modifier = iconSize.clickable {
+                            viewModel.playerButtonClick(PlayerButton.PREVIOUS)
                         }
-
-                    }
-
-                    Row {
-                        Slider(value = (defaultState?.elapsedPercent ?: 0).toFloat() / 100, onValueChange = {
-                            viewModel.moveTo((it * 100).toInt())
-                        })
-                    }
-
-                    Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-                        Text(defaultState?.position ?: "00:00")
-                        Text("/")
-                        Text(defaultState?.duration ?: "00:00")
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        val iconSize = Modifier.size(32.dp)
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_skip_previous),
-                            contentDescription = null,
-                            modifier = iconSize.clickable {
-                                viewModel.playerButtonClick(PlayerButton.PREVIOUS)
-                            }
-                        )
-                        Image(
-                            painter = painterResource(id = defaultState?.icon ?: R.drawable.ic_play_arrow),
-                            contentDescription = null,
-                            modifier = iconSize.clickable {
-                                viewModel.playerButtonClick(PlayerButton.PLAY)
-                            }
-                        )
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_skip_next),
-                            contentDescription = null,
-                            modifier = iconSize.clickable {
-                                viewModel.playerButtonClick(PlayerButton.NEXT)
-                            }
-                        )
-                    }
+                    )
+                    Image(
+                        painter = painterResource(id = defaultState?.icon ?: R.drawable.ic_play_arrow),
+                        contentDescription = null,
+                        modifier = iconSize.clickable {
+                            viewModel.playerButtonClick(PlayerButton.PLAY)
+                        }
+                    )
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_skip_next),
+                        contentDescription = null,
+                        modifier = iconSize.clickable {
+                            viewModel.playerButtonClick(PlayerButton.NEXT)
+                        }
+                    )
                 }
             }
         }
@@ -692,68 +723,68 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun RendererFloatingActionButton(
-        selectRendererState: MainViewModel.ViewState.SelectRendererState,
-        renderers: List<UpnpDevice>,
-        selectedItem: UpnpDevice?,
+        selectRendererState: ViewState.SelectRendererState,
+        renderers: List<ViewState.RenderersState.RendererModel>,
+        selectedItem: ViewState.RenderersState.RendererModel?,
         onDismissDialog: () -> Unit,
         onExpandButton: () -> Unit,
         onExpandDialog: () -> Unit,
+        onCancelClick: () -> Unit,
+        modifier: Modifier = Modifier,
     ) {
         LaunchedEffect(selectRendererState) {
             delay(5000)
             onDismissDialog()
         }
 
-        FloatingActionButton(onClick = {
-            if (selectRendererState.isSelectRendererButtonExpanded)
-                onExpandDialog()
-            else {
-                onExpandButton()
-            }
-        }, modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(painterResource(id = R.drawable.ic_cast), null)
-                // Toggle the visibility of the content with animation.
-                AnimatedVisibility(visible = selectRendererState.isSelectRendererButtonExpanded) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = selectedItem?.friendlyName ?: "Stream to",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        )
-
-                        AnimatedVisibility(
-                            selectedItem != null
-                        ) {
-                            Icon(
-                                painterResource(id = R.drawable.ic_close),
-                                contentDescription = null,
-                                modifier = Modifier.clickable {
-                                    if (selectedItem != null) viewModel.selectRenderer(selectedItem)
-                                }
+        Box(modifier = modifier) {
+            FloatingActionButton(onClick = {
+                if (selectRendererState.isSelectRendererButtonExpanded)
+                    onExpandDialog()
+                else {
+                    onExpandButton()
+                }
+            }, modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(painterResource(id = R.drawable.ic_cast), null)
+                    // Toggle the visibility of the content with animation.
+                    AnimatedVisibility(visible = selectRendererState.isSelectRendererButtonExpanded) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.wrapContentWidth()) {
+                            Text(
+                                text = selectedItem?.title ?: "Stream to",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 8.dp)
                             )
+
+                            AnimatedVisibility(selectedItem != null) {
+                                IconButton(onClick = onCancelClick) {
+                                    Icon(
+                                        painterResource(id = R.drawable.ic_close),
+                                        contentDescription = null,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
 
-        DropdownMenu(
-            expanded = selectRendererState.isSelectRendererDialogExpanded,
-            onDismissRequest = onDismissDialog,
-        ) {
-            for (item in renderers) {
-                DropdownMenuItem(onClick = {
-                    viewModel.selectRenderer(item)
-                }) {
-                    AnimatedVisibility(visible = item == selectedItem) {
-                        Icon(painterResource(R.drawable.ic_check), null)
+            DropdownMenu(
+                expanded = selectRendererState.isSelectRendererDialogExpanded,
+                onDismissRequest = onDismissDialog,
+            ) {
+                renderers.forEach { item ->
+                    DropdownMenuItem(onClick = { viewModel.selectRenderer(item.id) }) {
+                        Text(
+                            text = item.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    Text(text = item.friendlyName, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

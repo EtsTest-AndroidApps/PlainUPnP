@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m3sv.plainupnp.R
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
-import com.m3sv.plainupnp.data.upnp.UpnpDevice
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
 import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl
 import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
@@ -15,7 +14,21 @@ import com.m3sv.plainupnp.upnp.manager.UpnpManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNot
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -75,10 +88,29 @@ class MainViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(upnpManager.renderers, upnpManager.selectedRenderer) { renderers, selectedRenderer ->
+            combine(
+                upnpManager.renderers.map { renderers ->
+                    renderers.map { device ->
+                        ViewState.RenderersState.RendererModel(
+                            device.identity,
+                            device.friendlyName
+                        )
+                    }
+                },
+                upnpManager.selectedRenderer
+            ) { renderers, selectedRenderer ->
+
                 updateState { previousState ->
+                    val selectedRenderer = if (selectedRenderer != null) {
+                        ViewState.RenderersState.RendererModel(selectedRenderer.identity, selectedRenderer.friendlyName)
+                    } else {
+                        null
+                    }
+
                     val newRenderersState = previousState.renderersState.copy(
-                        renderers = renderers.toList(),
+                        renderers = renderers
+                            .filter { it != selectedRenderer }
+                            .toList(),
                         selectedRenderer = selectedRenderer
                     )
                     previousState.copy(renderersState = newRenderersState)
@@ -215,8 +247,12 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun selectRenderer(device: UpnpDevice) {
-        viewModelScope.launch { upnpManager.selectRenderer(device) }
+    fun selectRenderer(identity: String?) {
+        viewModelScope.launch {
+            upnpManager.selectRenderer(identity)
+            collapseSelectRendererButton()
+            collapseSelectRendererDialog()
+        }
     }
 
     fun playerButtonClick(button: PlayerButton) {
@@ -265,20 +301,26 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun unselectRenderer() {
+        selectRenderer(null)
+    }
+
     data class ViewState(
         val isSettingsDialogExpanded: Boolean,
         val selectRendererState: SelectRendererState,
         val isLoading: Boolean,
         val lastPlayed: String?,
         val renderersState: RenderersState,
-        val sortModel: SortModel,
         val folderContents: FolderContents,
+        val sortModel: SortModel,
         val filterText: String,
     ) {
         data class RenderersState(
-            val renderers: List<UpnpDevice>,
-            val selectedRenderer: UpnpDevice?,
-        )
+            val renderers: List<RendererModel>,
+            val selectedRenderer: RendererModel?,
+        ) {
+            data class RendererModel(val id: String, val title: String)
+        }
 
         data class SelectRendererState(
             val isSelectRendererButtonExpanded: Boolean,

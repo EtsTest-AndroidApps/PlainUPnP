@@ -54,6 +54,7 @@ class UpnpManagerImpl @Inject constructor(
     private val contentRepository: UpnpContentRepositoryImpl,
     private val logger: Logger
 ) : UpnpManager {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     override val volumeFlow: Flow<Volume> = volumeRepository.volumeFlow
     private val _selectedRenderer: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
     override val selectedRenderer: StateFlow<UpnpDevice?> = _selectedRenderer.asStateFlow()
@@ -71,18 +72,19 @@ class UpnpManagerImpl @Inject constructor(
             }
         }
 
-    override val renderers: Flow<Set<UpnpDevice>> = renderersDiscovery().scan(setOf()) { acc, event ->
-        val device = event.device
+    private val _renderers: StateFlow<Map<String, UpnpDevice>> =
+        renderersDiscovery().scan<UpnpDeviceEvent, Map<String, UpnpDevice>>(mapOf()) { acc, event ->
+            val device = event.device
 
-        when (event) {
-            is UpnpDeviceEvent.Added -> acc + device
-            is UpnpDeviceEvent.Removed -> acc - device
-        }
-    }
+            when (event) {
+                is UpnpDeviceEvent.Added -> acc + (device.identity to device)
+                is UpnpDeviceEvent.Removed -> acc - device.identity
+            }
+        }.stateIn(scope, SharingStarted.Eagerly, mapOf())
+
+    override val renderers: Flow<Collection<UpnpDevice>> = _renderers.map { it.values }
 
     private val updateChannel = MutableSharedFlow<Pair<Item, Service<*, *>>?>()
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     init {
         scope.launch {
@@ -180,12 +182,12 @@ class UpnpManagerImpl @Inject constructor(
         )
     }
 
-    override suspend fun selectRenderer(device: UpnpDevice) {
+    override suspend fun selectRenderer(identity: String?) {
         withContext(Dispatchers.IO) {
             stopUpdate()
 
-            _selectedRenderer.value = if (selectedRenderer.value != device) {
-                device
+            _selectedRenderer.value = if (selectedRenderer.value?.identity != identity) {
+                _renderers.value[identity]
             } else {
                 null
             }

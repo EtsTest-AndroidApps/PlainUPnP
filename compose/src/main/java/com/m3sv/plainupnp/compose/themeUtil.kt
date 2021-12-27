@@ -1,5 +1,6 @@
 package com.m3sv.plainupnp.compose
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.darkColors
 import androidx.compose.material.lightColors
@@ -25,7 +26,8 @@ private val darkColors = darkColors(
 fun AppTheme(isDarkTheme: Boolean, content: @Composable () -> Unit) {
     MaterialTheme(
         colors = if (isDarkTheme) darkColors else lightColors,
-        content = content
+        content = content,
+        shapes = MaterialTheme.shapes.copy(medium = RoundedCornerShape(32.dp))
     )
 }
 
