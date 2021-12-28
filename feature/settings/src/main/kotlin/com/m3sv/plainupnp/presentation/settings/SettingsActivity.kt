@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.m3sv.plainupnp.common.ThemeManager
@@ -335,7 +336,7 @@ class SettingsActivity : ComponentActivity() {
                     flipSwitch()
                     onSwitch(checkedState.value)
                 }
-                .padding(vertical = 12.dp, horizontal = 16.dp),
+                .padding(vertical = 8.dp, horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (icon != null) {
@@ -346,8 +347,11 @@ class SettingsActivity : ComponentActivity() {
                 )
             }
 
-            Row(Modifier.padding(start = if (icon != null) 16.dp else 4.dp)) {
-                Text(title)
+            Row(
+                Modifier.padding(start = if (icon != null) 16.dp else 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(modifier = Modifier.weight(1f))
                 Switch(checked = checkedState.value, onCheckedChange = {
                     checkedState.value = it
