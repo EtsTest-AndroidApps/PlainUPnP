@@ -41,9 +41,11 @@ private const val CONTENT_DIRECTORY = "ContentDirectory"
 sealed interface Result {
     object Success : Result
     enum class Error : Result {
-        GENERIC, AV_SERVICE_NOT_FOUND
+        GENERIC, AV_SERVICE_NOT_FOUND, CONTENT_DIRECTORY_NOT_FOUND
     }
 }
+
+private typealias DeviceCache = Map<String, UpnpDevice>
 
 class UpnpManagerImpl @Inject constructor(
     renderersDiscovery: Renderers,
@@ -62,18 +64,20 @@ class UpnpManagerImpl @Inject constructor(
     private val upnpInnerStateChannel = MutableSharedFlow<UpnpRendererState>()
     override val upnpRendererState: Flow<UpnpRendererState> = upnpInnerStateChannel
 
-    override val contentDirectories: Flow<Set<UpnpDevice>> =
-        contentDirectoriesDiscovery().scan(setOf()) { acc, event ->
+    private val _contentDirectories: StateFlow<DeviceCache> =
+        contentDirectoriesDiscovery().scan<UpnpDeviceEvent, DeviceCache>(mapOf()) { acc, event ->
             val device = event.device
 
             when (event) {
-                is UpnpDeviceEvent.Added -> acc + device
-                is UpnpDeviceEvent.Removed -> acc - device
+                is UpnpDeviceEvent.Added -> acc + (device.identity to device)
+                is UpnpDeviceEvent.Removed -> acc - device.identity
             }
-        }
+        }.stateIn(scope, SharingStarted.Eagerly, mapOf())
 
-    private val _renderers: StateFlow<Map<String, UpnpDevice>> =
-        renderersDiscovery().scan<UpnpDeviceEvent, Map<String, UpnpDevice>>(mapOf()) { acc, event ->
+    override val contentDirectories: Flow<Collection<UpnpDevice>> = _contentDirectories.map { it.values }
+
+    private val _renderers: StateFlow<DeviceCache> =
+        renderersDiscovery().scan<UpnpDeviceEvent, DeviceCache>(mapOf()) { acc, event ->
             val device = event.device
 
             when (event) {
@@ -171,23 +175,28 @@ class UpnpManagerImpl @Inject constructor(
         }
     }
 
-    override suspend fun selectContentDirectory(device: UpnpDevice): Result = withContext(Dispatchers.IO) {
+    override suspend fun selectContentDirectory(id: String?): Result = withContext(Dispatchers.IO) {
+        val contentDirectory = _contentDirectories.value[id]
         folderStack.value = listOf()
         contentCache.clear()
-        selectedContentDirectory.value = device
+        selectedContentDirectory.value = contentDirectory
 
-        safeNavigateTo(
-            folderId = ROOT_FOLDER_ID,
-            folderName = device.friendlyName
-        )
+        when (contentDirectory) {
+            null -> Result.Error.CONTENT_DIRECTORY_NOT_FOUND
+
+            else -> safeNavigateTo(
+                folderId = ROOT_FOLDER_ID,
+                folderName = contentDirectory.friendlyName
+            )
+        }
     }
 
-    override suspend fun selectRenderer(identity: String?) {
+    override suspend fun selectRenderer(id: String?) {
         withContext(Dispatchers.IO) {
             stopUpdate()
 
-            _selectedRenderer.value = if (selectedRenderer.value?.identity != identity) {
-                _renderers.value[identity]
+            _selectedRenderer.value = if (selectedRenderer.value?.identity != id) {
+                _renderers.value[id]
             } else {
                 null
             }

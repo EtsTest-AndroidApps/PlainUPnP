@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 interface UpnpManager : UpnpVolumeManager, PlaybackManager {
     val renderers: Flow<Collection<UpnpDevice>>
     val selectedRenderer: StateFlow<UpnpDevice?>
-    val contentDirectories: Flow<Set<UpnpDevice>>
+    val contentDirectories: Flow<Collection<UpnpDevice>>
     val upnpRendererState: Flow<UpnpRendererState>
     val navigationStack: Flow<List<Folder>>
 
@@ -20,6 +20,6 @@ interface UpnpManager : UpnpVolumeManager, PlaybackManager {
     suspend fun navigateTo(folder: Folder)
     suspend fun itemClick(id: String): Pair<Result, ClingDIDLObject?>
     suspend fun seekTo(progress: Int)
-    suspend fun selectContentDirectory(device: UpnpDevice): Result
-    suspend fun selectRenderer(identity: String?)
+    suspend fun selectContentDirectory(id: String?): Result
+    suspend fun selectRenderer(id: String?)
 }
