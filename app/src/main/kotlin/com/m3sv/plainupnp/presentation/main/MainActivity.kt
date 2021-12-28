@@ -490,7 +490,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                floatingActionButton(Modifier.align(Alignment.BottomEnd))
+                androidx.compose.animation.AnimatedVisibility(
+                    !showControls,
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                ) {
+                    floatingActionButton(Modifier)
+                }
             }
 
             filter()
