@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
@@ -38,7 +39,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Card
 import androidx.compose.material.Divider
 import androidx.compose.material.DropdownMenu
@@ -73,7 +76,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
@@ -431,7 +433,9 @@ class MainActivity : ComponentActivity() {
             filter()
 
             AnimatedVisibility(visible = showControls) {
-                Controls(upnpState, 16.dp, 16.dp)
+                Surface(elevation = 8.dp, shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)) {
+                    Controls(upnpState, modifier = Modifier.padding(24.dp))
+                }
             }
         }
     }
@@ -454,32 +458,42 @@ class MainActivity : ComponentActivity() {
                     .weight(1f)
             ) {
                 Row {
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        folderContents(Modifier.weight(1f))
-                        filter()
+                    Column(modifier = Modifier.weight(1f)) {
+                        folderContents(Modifier)
                     }
 
-                    Controls(
+                    Row(
                         modifier = Modifier
-                            .fillMaxHeight()
                             .animateContentSize(animationSpec = tween())
+                            .padding(top = 8.dp)
                             .then(
                                 if (showControls) {
                                     Modifier.weight(1f)
                                 } else {
                                     Modifier.width(0.dp)
                                 }
-                            ),
-                        upnpState = upnpState,
-                        verticalPadding = 8.dp,
-                        elevation = 0.dp
-                    )
+                            )
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxHeight()
+                                .requiredWidth(2.dp)
+                                .background(color = MaterialTheme.colors.primary)
+                        )
+
+                        Controls(
+                            upnpState = upnpState,
+                            modifier = Modifier
+                                .padding(horizontal = 24.dp)
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
                 }
 
                 floatingActionButton(Modifier.align(Alignment.BottomEnd))
             }
+
+            filter()
         }
     }
 
@@ -641,80 +655,63 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun Controls(
-        upnpState: UpnpRendererState,
-        verticalPadding: Dp,
-        elevation: Dp,
-        modifier: Modifier = Modifier,
-    ) {
+    private fun Controls(upnpState: UpnpRendererState, modifier: Modifier = Modifier) {
         val defaultState: UpnpRendererState.Default? = upnpState as? UpnpRendererState.Default
 
-        Surface(
-            modifier = modifier,
-            shape = RoundedCornerShape(topStart = AppTheme.cornerRadius, topEnd = AppTheme.cornerRadius),
-            elevation = elevation
-        ) {
-            Column(
+        Column(modifier = modifier) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(defaultState?.title ?: "")
+            }
+
+            Slider(
+                value = (defaultState?.elapsedPercent ?: 0).toFloat() / 100,
+                onValueChange = {
+                    viewModel.moveTo((it * 100).toInt())
+                })
+
+            Row(horizontalArrangement = Arrangement.Center) {
+                Text(defaultState?.position ?: "00:00")
+                Text("/")
+                Text(defaultState?.duration ?: "00:00")
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 modifier = Modifier
-                    .padding(horizontal = 24.dp)
-                    .padding(vertical = verticalPadding)
+                    .fillMaxWidth()
+                    .padding(top = 24.dp)
             ) {
-                Row {
-                    Text(defaultState?.title ?: "")
-                    Spacer(modifier = Modifier.weight(1f))
+                val sizeModifier = Modifier.size(42.dp)
+
+                IconButton(onClick = { viewModel.playerButtonClick(PlayerButton.PREVIOUS) }) {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_close),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clickable {
-                                viewModel.playerButtonClick(PlayerButton.STOP)
-                            }
-                    )
-                }
-
-                Slider(
-                    value = (defaultState?.elapsedPercent ?: 0).toFloat() / 100,
-                    onValueChange = {
-                        viewModel.moveTo((it * 100).toInt())
-                    })
-
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    Text(defaultState?.position ?: "00:00")
-                    Text("/")
-                    Text(defaultState?.duration ?: "00:00")
-                }
-
-                Row(
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    val iconSize = Modifier.size(32.dp)
-
-                    Image(
                         painter = painterResource(id = R.drawable.ic_skip_previous),
                         contentDescription = null,
-                        modifier = iconSize.clickable {
-                            viewModel.playerButtonClick(PlayerButton.PREVIOUS)
-                        }
+                        modifier = sizeModifier
                     )
-                    Image(
-                        painter = painterResource(id = defaultState?.icon ?: R.drawable.ic_play_arrow),
+                }
+
+                IconButton(onClick = { viewModel.playerButtonClick(PlayerButton.PLAY) }) {
+                    Icon(
+                        painter = painterResource(id = defaultState?.icon ?: R.drawable.ic_play),
                         contentDescription = null,
-                        modifier = iconSize.clickable {
-                            viewModel.playerButtonClick(PlayerButton.PLAY)
-                        }
+                        modifier = sizeModifier
                     )
-                    Image(
+                }
+
+                IconButton(onClick = { viewModel.playerButtonClick(PlayerButton.STOP) }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_stop),
+                        contentDescription = null,
+                        modifier = sizeModifier
+                    )
+                }
+
+                IconButton(onClick = { viewModel.playerButtonClick(PlayerButton.NEXT) }) {
+                    Icon(
                         painter = painterResource(id = R.drawable.ic_skip_next),
                         contentDescription = null,
-                        modifier = iconSize.clickable {
-                            viewModel.playerButtonClick(PlayerButton.NEXT)
-                        }
+                        modifier = sizeModifier
                     )
                 }
             }
@@ -895,6 +892,6 @@ class MainActivity : ComponentActivity() {
             TransportState.RECORDING,
             TransportState.NO_MEDIA_PRESENT,
             TransportState.CUSTOM,
-            -> R.drawable.ic_play_arrow
+            -> R.drawable.ic_play
         }
 }
