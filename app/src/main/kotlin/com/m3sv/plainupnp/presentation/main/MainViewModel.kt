@@ -249,9 +249,10 @@ class MainViewModel @Inject constructor(
 
     fun selectRenderer(identity: String?) {
         viewModelScope.launch {
-            upnpManager.selectRenderer(identity)
             collapseSelectRendererButton()
             collapseSelectRendererDialog()
+            delay(250)
+            upnpManager.selectRenderer(identity)
         }
     }
 
