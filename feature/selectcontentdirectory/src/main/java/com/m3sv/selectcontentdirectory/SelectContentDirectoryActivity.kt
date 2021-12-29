@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
 import com.m3sv.plainupnp.Router
 import com.m3sv.plainupnp.common.ThemeManager
 import com.m3sv.plainupnp.common.util.finishApp
@@ -45,6 +46,7 @@ import com.m3sv.plainupnp.compose.util.isDarkTheme
 import com.m3sv.plainupnp.interfaces.LifecycleManager
 import com.m3sv.selectcontentdirectory.SelectContentDirectoryViewModel.ViewState
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -60,6 +62,13 @@ class SelectContentDirectoryActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        lifecycleScope.launch {
+            lifecycleManager.doOnClose {
+                finishAndRemoveTask()
+                finishAffinity()
+            }
+        }
 
         setContent {
             val viewState: ViewState by viewModel.viewState.collectAsState()

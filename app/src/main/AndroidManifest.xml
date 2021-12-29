@@ -22,6 +22,7 @@
         <activity
             android:name=".presentation.splash.SplashActivity"
             android:exported="true"
+            android:autoRemoveFromRecents="true"
             android:label="@string/app_name"
             android:resizeableActivity="true"
             android:theme="@style/Theme.Plain.Splash">

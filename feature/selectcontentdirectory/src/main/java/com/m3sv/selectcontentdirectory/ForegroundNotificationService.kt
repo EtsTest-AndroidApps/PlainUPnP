@@ -7,7 +7,9 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.m3sv.plainupnp.interfaces.LifecycleManager
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.system.exitProcess
 
 @AndroidEntryPoint
 class ForegroundNotificationService : LifecycleService() {
@@ -17,10 +19,11 @@ class ForegroundNotificationService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
-        lifecycleScope.launchWhenCreated {
+        lifecycleScope.launch {
             lifecycleManager.doOnClose {
                 stopForeground(true)
                 stopSelf()
+                exitProcess(0)
             }
         }
     }
