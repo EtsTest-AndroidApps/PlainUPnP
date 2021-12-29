@@ -11,13 +11,29 @@ import com.m3sv.plainupnp.ContentModel
 import com.m3sv.plainupnp.ContentRepository
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
 import com.m3sv.plainupnp.logging.Logger
-import com.m3sv.plainupnp.upnp.mediacontainers.*
-import com.m3sv.plainupnp.upnp.util.*
-import kotlinx.coroutines.*
+import com.m3sv.plainupnp.upnp.mediacontainers.AllAudioContainer
+import com.m3sv.plainupnp.upnp.mediacontainers.AllImagesContainer
+import com.m3sv.plainupnp.upnp.mediacontainers.AllVideoContainer
+import com.m3sv.plainupnp.upnp.mediacontainers.BaseContainer
+import com.m3sv.plainupnp.upnp.mediacontainers.DefaultContainer
+import com.m3sv.plainupnp.upnp.util.PORT
+import com.m3sv.plainupnp.upnp.util.addAudioItem
+import com.m3sv.plainupnp.upnp.util.addImageItem
+import com.m3sv.plainupnp.upnp.util.addVideoItem
+import com.m3sv.plainupnp.upnp.util.getLocalIpAddress
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.security.SecureRandom
@@ -38,17 +54,21 @@ class UpnpContentRepositoryImpl @Inject constructor(
 ) : ContentRepository {
 
     var containerCache: Map<Long, BaseContainer> = emptyMap()
-    private val allCache: MutableMap<Long, ContentModel> = mutableMapOf()
-    override val contentCache: Map<Long, ContentModel> = allCache
-    private val scope = CoroutineScope(Dispatchers.IO)
+        private set
+
+    private val _contentCache: MutableMap<Long, ContentModel> = mutableMapOf()
+    override val contentCache: Map<Long, ContentModel> = _contentCache
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val appName by lazy { application.getString(R.string.app_name) }
-    private val localIpAddress by lazy { getLocalIpAddress(application, logger).hostAddress }
-    private val baseUrl: String by lazy { "$localIpAddress:$PORT" }
 
-    private val _refreshState: MutableStateFlow<ContentUpdateState> =
-        MutableStateFlow(ContentUpdateState.Ready)
+    private val baseUrl: String by lazy {
+        val localIpAddress = getLocalIpAddress(application, logger).hostAddress
+        "$localIpAddress:$PORT"
+    }
 
+    private val _refreshState: MutableStateFlow<ContentUpdateState> = MutableStateFlow(ContentUpdateState.Ready)
     val refreshState: Flow<ContentUpdateState> = _refreshState
 
     init {
@@ -56,8 +76,17 @@ class UpnpContentRepositoryImpl @Inject constructor(
             preferencesRepository
                 .updateFlow
                 .debounce(2000)
-                .collect { refreshContent() }
+                .onEach { refreshContent() }
+                .collect()
         }
+    }
+
+    private val init by lazy {
+        runBlocking { refreshInternal() }
+    }
+
+    override fun init() {
+        init
     }
 
     override fun refreshContent() {
@@ -66,16 +95,6 @@ class UpnpContentRepositoryImpl @Inject constructor(
             refreshInternal()
             _refreshState.value = ContentUpdateState.Ready
         }
-    }
-
-    private val init by lazy {
-        runBlocking {
-            refreshInternal()
-        }
-    }
-
-    override fun init() {
-        init
     }
 
     private suspend fun refreshInternal() {
@@ -307,7 +326,7 @@ class UpnpContentRepositoryImpl @Inject constructor(
         }
 
         if (item != null) {
-            allCache[id] = ContentModel(uri, mime, displayName, item)
+            _contentCache[id] = ContentModel(uri, mime, displayName, item)
         }
     }
 
