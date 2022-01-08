@@ -7,6 +7,7 @@ import com.m3sv.plainupnp.logging.Logger
 import com.m3sv.plainupnp.upnp.ContentUpdateState
 import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl
 import com.m3sv.plainupnp.upnp.UpnpRepository
+import com.m3sv.plainupnp.upnp.actions.misc.BrowseResult
 import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
 import com.m3sv.plainupnp.upnp.didl.ClingContainer
 import com.m3sv.plainupnp.upnp.didl.ClingDIDLObject
@@ -41,7 +42,10 @@ private const val CONTENT_DIRECTORY = "ContentDirectory"
 sealed interface Result {
     object Success : Result
     enum class Error : Result {
-        GENERIC, AV_SERVICE_NOT_FOUND, CONTENT_DIRECTORY_NOT_FOUND
+        AvServiceNotFound,
+        ContentDirectoryNotFound,
+        MissingStoragePermission,
+        Generic
     }
 }
 
@@ -182,8 +186,7 @@ class UpnpManagerImpl @Inject constructor(
         selectedContentDirectory.value = contentDirectory
 
         when (contentDirectory) {
-            null -> Result.Error.CONTENT_DIRECTORY_NOT_FOUND
-
+            null -> Result.Error.ContentDirectoryNotFound
             else -> safeNavigateTo(
                 folderId = ROOT_FOLDER_ID,
                 folderName = contentDirectory.friendlyName
@@ -247,13 +250,13 @@ class UpnpManagerImpl @Inject constructor(
                     is ImageItem -> upnpInnerStateChannel.emit(UpnpRendererState.Empty)
                 }
                 Result.Success
-            } ?: Result.Error.AV_SERVICE_NOT_FOUND
+            } ?: Result.Error.AvServiceNotFound
         }
 
         if (result.isSuccess)
             result.getOrThrow()
         else
-            Result.Error.GENERIC
+            Result.Error.Generic
     }
 
     private var currentDuration: Long = 0L
@@ -281,12 +284,12 @@ class UpnpManagerImpl @Inject constructor(
     }
 
     override suspend fun itemClick(id: String): Pair<Result, ClingDIDLObject?> = withContext(Dispatchers.IO) {
-        val item: ClingDIDLObject = contentCache[id] ?: return@withContext Result.Error.GENERIC to null
+        val item: ClingDIDLObject = contentCache[id] ?: return@withContext Result.Error.Generic to null
 
         when (item) {
             is ClingContainer -> safeNavigateTo(folderId = id, folderName = item.title) to item
             is ClingMedia -> playItem(item) to item
-            is MiscItem -> Result.Error.GENERIC to null
+            is MiscItem -> Result.Error.Generic to null
         }
     }
 
@@ -434,7 +437,7 @@ class UpnpManagerImpl @Inject constructor(
 
         if (selectedDevice == null) {
             logger.e("Selected content directory is null!")
-            return@withContext Result.Error.GENERIC
+            return@withContext Result.Error.Generic
         }
 
         val service: Service<*, *>? =
@@ -442,48 +445,47 @@ class UpnpManagerImpl @Inject constructor(
 
         if (service == null || !service.hasActions()) {
             logger.e("Service is null or has no actions")
-            return@withContext Result.Error.GENERIC
+            return@withContext Result.Error.Generic
         }
 
-        try {
-            currentContent.value = upnpRepository.browse(service, folderId)
-        } catch (e: Exception) {
-            logger.e("Failed to browse")
-            return@withContext Result.Error.GENERIC
+        when (val result = upnpRepository.browse(service, folderId)) {
+            is BrowseResult.Error.Generic -> Result.Error.Generic
+            is BrowseResult.Error.MissingStoragePermission -> Result.Error.MissingStoragePermission
+            is BrowseResult.Success -> {
+                currentContent.value = result.contents
+                contentCache.putAll(currentContent.value.associateBy { it.id })
+                val currentFolderName = folderName.replace(UpnpContentRepositoryImpl.USER_DEFINED_PREFIX, "")
+
+                val folder = when (folderId) {
+                    ROOT_FOLDER_ID -> Folder.Root(
+                        FolderModel(
+                            id = folderId,
+                            title = currentFolderName,
+                            contents = currentContent.value
+                        )
+                    )
+                    else -> Folder.SubFolder(
+                        FolderModel(
+                            id = folderId,
+                            title = currentFolderName,
+                            contents = currentContent.value
+                        )
+                    )
+                }
+
+                folderStack.value = when (folder) {
+                    is Folder.Root -> listOf(folder)
+                    is Folder.SubFolder -> folderStack
+                        .value
+                        .toMutableList()
+                        .apply { add(folder) }
+                        .toList()
+                }
+
+                Result.Success
+            }
         }
-
-        contentCache.putAll(currentContent.value.associateBy { it.id })
-        val currentFolderName = folderName.replace(UpnpContentRepositoryImpl.USER_DEFINED_PREFIX, "")
-
-        val folder = when (folderId) {
-            ROOT_FOLDER_ID -> Folder.Root(
-                FolderModel(
-                    id = folderId,
-                    title = currentFolderName,
-                    contents = currentContent.value
-                )
-            )
-            else -> Folder.SubFolder(
-                FolderModel(
-                    id = folderId,
-                    title = currentFolderName,
-                    contents = currentContent.value
-                )
-            )
-        }
-
-        folderStack.value = when (folder) {
-            is Folder.Root -> listOf(folder)
-            is Folder.SubFolder -> folderStack
-                .value
-                .toMutableList()
-                .apply { add(folder) }
-                .toList()
-        }
-
-        Result.Success
     }
-
 
     private val avService: Service<*, *>?
         get() = selectedRenderer

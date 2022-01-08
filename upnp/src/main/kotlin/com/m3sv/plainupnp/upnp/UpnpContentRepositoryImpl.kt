@@ -10,6 +10,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.m3sv.plainupnp.ContentModel
 import com.m3sv.plainupnp.ContentRepository
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
+import com.m3sv.plainupnp.common.util.isStoragePermissionGranted
 import com.m3sv.plainupnp.logging.Logger
 import com.m3sv.plainupnp.upnp.mediacontainers.AllAudioContainer
 import com.m3sv.plainupnp.upnp.mediacontainers.AllImagesContainer
@@ -85,8 +86,14 @@ class UpnpContentRepositoryImpl @Inject constructor(
         runBlocking { refreshInternal() }
     }
 
-    override fun init() {
-        init
+    override fun init(): Boolean {
+        val hasStoragePermission = application.isStoragePermissionGranted()
+
+        if (hasStoragePermission) {
+            init
+        }
+
+        return hasStoragePermission
     }
 
     override fun refreshContent() {
@@ -114,7 +121,9 @@ class UpnpContentRepositoryImpl @Inject constructor(
         }
 
         coroutineScope {
-            if (preferences.enableImages) {
+            val isStoragePermissionGranted = application.isStoragePermissionGranted()
+
+            if (isStoragePermissionGranted && preferences.enableImages) {
                 launch {
                     val imagesContainer = getRootImagesContainer()
                     rootContainer.addContainer(imagesContainer)
@@ -122,7 +131,7 @@ class UpnpContentRepositoryImpl @Inject constructor(
                 }
             }
 
-            if (preferences.enableAudio) {
+            if (isStoragePermissionGranted && preferences.enableAudio) {
                 launch {
                     val audioContainer = getRootAudioContainer()
                     rootContainer.addContainer(audioContainer)
@@ -130,7 +139,7 @@ class UpnpContentRepositoryImpl @Inject constructor(
                 }
             }
 
-            if (preferences.enableVideos) {
+            if (isStoragePermissionGranted && preferences.enableVideos) {
                 launch {
                     val videoContainer = getRootVideoContainer()
                     rootContainer.addContainer(videoContainer)

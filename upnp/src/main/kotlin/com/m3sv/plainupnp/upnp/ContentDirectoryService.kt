@@ -26,7 +26,14 @@ class ContentDirectoryService : AbstractContentDirectoryService() {
         orderby: Array<SortCriterion>,
     ): BrowseResult {
         try {
-            contentRepository.init()
+            val initialized = contentRepository.init()
+
+            if (initialized.not()) {
+                throw ContentDirectoryException(
+                    ContentDirectoryErrorCode.CANNOT_PROCESS,
+                    READ_PERMISSION_IS_MISSING
+                )
+            }
 
             val url = objectID
                 .split(SEPARATOR)
@@ -77,5 +84,7 @@ class ContentDirectoryService : AbstractContentDirectoryService() {
     companion object {
         private val noSuchObject
             get() = ContentDirectoryException(ContentDirectoryErrorCode.NO_SUCH_OBJECT)
+
+        const val READ_PERMISSION_IS_MISSING = "READ_EXTERNAL_STORAGE permission is missing!"
     }
 }

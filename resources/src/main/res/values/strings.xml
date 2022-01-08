@@ -44,6 +44,10 @@
     <string name="system_theme_label">System-based</string>
     <string name="browse_failed">Browsing content failed, try re-selecting the device. If that doesn\'t help restart device and app.</string>
     <string name="by_folder">By folder</string>
+    <string name="content_directory_generic_error">Failed to connect to content directory</string>
+    <string name="content_directory_could_not_find_av_service">Failed to find AudioVideo service, try to restart content directory</string>
+    <string name="content_directory_not_found">Content directory disappeared</string>
+    <string name="content_directory_missing_permission">Storage permission has been revoked!</string>
     <string name="selected_folders">Selected folders</string>
     <string name="application_mode_player">Player</string>
     <string name="application_mode_streaming">Streaming</string>

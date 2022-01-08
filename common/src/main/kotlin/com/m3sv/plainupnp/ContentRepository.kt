@@ -13,5 +13,9 @@ data class ContentModel(
 interface ContentRepository {
     val contentCache: Map<Long, ContentModel>
     fun refreshContent()
-    fun init()
+
+    /**
+     * Returns whether successfully initialized or failed
+     */
+    fun init(): Boolean
 }

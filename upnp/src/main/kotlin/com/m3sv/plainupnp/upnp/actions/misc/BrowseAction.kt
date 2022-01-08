@@ -1,13 +1,10 @@
 package com.m3sv.plainupnp.upnp.actions.misc
 
-import com.m3sv.plainupnp.upnp.actions.Action
+import com.m3sv.plainupnp.upnp.ContentDirectoryService
 import com.m3sv.plainupnp.upnp.didl.ClingContainer
 import com.m3sv.plainupnp.upnp.didl.ClingDIDLObject
 import com.m3sv.plainupnp.upnp.didl.ClingMedia
 import com.m3sv.plainupnp.upnp.didl.MiscItem
-import kotlinx.coroutines.channels.trySendBlocking
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
 import org.fourthline.cling.controlpoint.ControlPoint
 import org.fourthline.cling.model.action.ActionInvocation
 import org.fourthline.cling.model.message.UpnpResponse
@@ -23,16 +20,25 @@ import javax.inject.Inject
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
-class BrowseAction @Inject constructor(controlPoint: ControlPoint) :
-    Action<String?, List<ClingDIDLObject>>(controlPoint) {
+sealed interface BrowseResult {
+    @JvmInline
+    value class Success(val contents: List<ClingDIDLObject>) : BrowseResult
 
-    fun browse(
+    sealed interface Error : BrowseResult {
+        object Generic : Error
+        object MissingStoragePermission : Error
+    }
+}
+
+class BrowseAction @Inject constructor(private val controlPoint: ControlPoint) {
+
+    suspend operator fun invoke(
         service: Service<*, *>,
-        objectId: String,
-    ): Flow<List<ClingDIDLObject>> = callbackFlow {
+        id: String
+    ): BrowseResult = suspendCoroutine { continuation ->
         controlPoint.execute(object : Browse(
             service,
-            objectId,
+            id,
             BrowseFlag.DIRECT_CHILDREN,
             "*",
             0,
@@ -40,65 +46,43 @@ class BrowseAction @Inject constructor(controlPoint: ControlPoint) :
         ) {
             override fun received(actionInvocation: ActionInvocation<*>, didl: DIDLContent) {
                 Timber.d("Received browse response")
-                trySendBlocking(buildContentList(didl))
-                close()
-            }
-
-            override fun updateStatus(status: Status) {
-                // TODO Add support for progress
-                Timber.d("Update browse status $status")
-            }
-
-            override fun failure(
-                invocation: ActionInvocation<*>,
-                operation: UpnpResponse,
-                defaultMsg: String,
-            ) {
-                error("Failed to browse $objectId! Message: $defaultMsg")
-            }
-        })
-    }
-
-    override suspend fun invoke(
-        service: Service<*, *>,
-        vararg arguments: String?,
-    ): List<ClingDIDLObject> = suspendCoroutine { continuation ->
-        controlPoint.execute(object : Browse(
-            service,
-            arguments[0],
-            BrowseFlag.DIRECT_CHILDREN,
-            "*",
-            0,
-            null
-        ) {
-            override fun received(actionInvocation: ActionInvocation<*>, didl: DIDLContent) {
-                Timber.d("Received browse response")
-                continuation.resume(buildContentList(didl))
+                continuation.resume(BrowseResult.Success(buildContentList(didl)))
             }
 
             override fun updateStatus(status: Status) {
                 Timber.d("Update browse status $status")
             }
 
+            override fun failure(invocation: ActionInvocation<out Service<*, *>>?, operation: UpnpResponse?) {
+                val result = if (isReadPermissionMissing(invocation))
+                    BrowseResult.Error.MissingStoragePermission
+                else
+                    BrowseResult.Error.Generic
+
+                continuation.resume(result)
+            }
+
+            private fun isReadPermissionMissing(invocation: ActionInvocation<out Service<*, *>>?): Boolean {
+                val exception = invocation?.failure
+                return exception?.message?.contains(ContentDirectoryService.READ_PERMISSION_IS_MISSING) == true
+            }
+
             override fun failure(
-                invocation: ActionInvocation<*>,
-                operation: UpnpResponse,
-                defaultMsg: String,
+                invocation: ActionInvocation<out Service<*, *>>?,
+                operation: UpnpResponse?,
+                defaultMsg: String?
             ) {
-                Timber.w("Failed to browse! $defaultMsg")
-                error("Failed to browse!")
+                continuation.resume(BrowseResult.Error.Generic)
             }
         })
     }
 
-    private fun buildContentList(didl: DIDLContent): List<ClingDIDLObject> {
-        val result = mutableListOf<ClingDIDLObject>()
-
-        for (item in didl.containers) {
-            result.add(ClingContainer(item))
+    private fun buildContentList(content: DIDLContent): List<ClingDIDLObject> = buildList {
+        content.containers.forEach { container ->
+            add(ClingContainer(container))
         }
 
-        for (item in didl.items) {
+        content.items.forEach { item ->
             val clingItem: ClingDIDLObject = when (item) {
                 is VideoItem -> ClingMedia.Video(item)
                 is AudioItem -> ClingMedia.Audio(item)
@@ -106,9 +90,7 @@ class BrowseAction @Inject constructor(controlPoint: ControlPoint) :
                 else -> MiscItem(item)
             }
 
-            result.add(clingItem)
+            add(clingItem)
         }
-
-        return result
     }
 }

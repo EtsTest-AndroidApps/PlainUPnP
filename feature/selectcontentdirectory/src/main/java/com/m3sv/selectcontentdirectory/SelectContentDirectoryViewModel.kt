@@ -58,15 +58,15 @@ class SelectContentDirectoryViewModel @Inject constructor(
         }
     }
 
-
     fun selectContentDirectory(id: String) {
         viewModelScope.launch(Dispatchers.IO) {
             updateViewState { previousState -> previousState.copy(loadingDeviceId = id) }
 
             val navigationResult = when (upnpManager.selectContentDirectory(id)) {
-                Result.Error.GENERIC -> ViewState.NavigationResult.Error("Failed to connect to content directory")
-                Result.Error.AV_SERVICE_NOT_FOUND -> ViewState.NavigationResult.Error("Failed to find AudioVideo service, try to restart content directory")
-                Result.Error.CONTENT_DIRECTORY_NOT_FOUND -> ViewState.NavigationResult.Error("Content directory disappeared")
+                Result.Error.Generic -> ViewState.NavigationResult.Error(R.string.content_directory_generic_error)
+                Result.Error.AvServiceNotFound -> ViewState.NavigationResult.Error(R.string.content_directory_could_not_find_av_service)
+                Result.Error.ContentDirectoryNotFound -> ViewState.NavigationResult.Error(R.string.content_directory_not_found)
+                Result.Error.MissingStoragePermission -> ViewState.NavigationResult.Error(R.string.content_directory_missing_permission)
                 Result.Success -> ViewState.NavigationResult.Success
             }
 
@@ -100,7 +100,7 @@ class SelectContentDirectoryViewModel @Inject constructor(
             object Success : NavigationResult
 
             @JvmInline
-            value class Error(val message: String) : NavigationResult
+            value class Error(val message: Int) : NavigationResult
         }
 
         companion object {

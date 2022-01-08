@@ -172,7 +172,7 @@ class SelectContentDirectoryActivity : ComponentActivity() {
         startActivity((application as Router).getMainActivityIntent(this))
     }
 
-    private fun handleSelectDirectoryError(message: String) {
+    private fun handleSelectDirectoryError(message: Int) {
         Toast
             .makeText(this, message, Toast.LENGTH_SHORT)
             .show()
