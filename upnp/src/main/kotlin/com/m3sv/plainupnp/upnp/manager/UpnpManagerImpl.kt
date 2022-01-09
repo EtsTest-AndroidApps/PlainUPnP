@@ -226,7 +226,7 @@ class UpnpManagerImpl @Inject constructor(
         }
 
         val result = runCatching {
-            withAvService { service ->
+            avService?.let { service ->
                 val didlItem = item.didlObject as Item
                 val uri = didlItem.firstResource?.value ?: error("First resource or its value is null!")
                 val didlType = when (didlItem) {
@@ -409,24 +409,4 @@ class UpnpManagerImpl @Inject constructor(
                     null
                 }
             }
-
-    private suspend fun <T> withAvService(block: suspend (Service<*, *>) -> T): T? {
-        return when (val avService = avService) {
-            null -> {
-                logger.e("Av service is not found!")
-                null
-            }
-            else -> block(avService)
-        }
-    }
-
-    private suspend fun <T> withRcService(block: suspend (Service<*, *>) -> T): T? {
-        return when (val rcService = rcService) {
-            null -> {
-                logger.e("Rc service is not found!")
-                null
-            }
-            else -> block(rcService)
-        }
-    }
 }
