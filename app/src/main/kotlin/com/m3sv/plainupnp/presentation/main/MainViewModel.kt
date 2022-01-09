@@ -100,7 +100,6 @@ class MainViewModel @Inject constructor(
                 },
                 upnpManager.selectedRenderer
             ) { renderers, selectedRenderer ->
-
                 updateState { previousState ->
                     val selectedRenderer = if (selectedRenderer != null) {
                         ViewState.RenderersState.RendererModel(selectedRenderer.identity, selectedRenderer.friendlyName)

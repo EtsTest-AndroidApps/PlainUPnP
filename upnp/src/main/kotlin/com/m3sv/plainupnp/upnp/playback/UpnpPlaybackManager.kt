@@ -5,6 +5,9 @@ import com.m3sv.plainupnp.logging.Logger
 import com.m3sv.plainupnp.upnp.UpnpRepository
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
@@ -15,6 +18,21 @@ class UpnpPlaybackManager @Inject constructor(
     private val upnpRepository: UpnpRepository,
     private val logger: Logger
 ) : PlaybackManager {
+    private val _playbackQueue: MutableStateFlow<LinkedHashSet<PlaybackItem>> = MutableStateFlow(LinkedHashSet())
+    override val playbackQueue: StateFlow<Set<PlaybackItem>> = _playbackQueue.asStateFlow()
+
+    override suspend fun addToQueue(item: PlaybackItem) {
+        _playbackQueue.value = _playbackQueue.value.apply { add(item) }
+    }
+
+    override suspend fun removeFromQueue(item: PlaybackItem) {
+        _playbackQueue.value = _playbackQueue.value.apply { remove(item) }
+    }
+
+    override suspend fun clearQueue() {
+        stopPlayback()
+        _playbackQueue.value = LinkedHashSet()
+    }
 
     override suspend fun pausePlayback() {
         withContext(Dispatchers.IO) {
