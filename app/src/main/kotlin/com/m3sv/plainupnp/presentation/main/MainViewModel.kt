@@ -246,7 +246,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun setSettingsDialogState(expanded: Boolean) {
-        isSelectRendererDialogExpanded.value = expanded
+        updateState { it.copy(isSettingsDialogExpanded = expanded) }
     }
 
     fun moveTo(progress: Int) {
