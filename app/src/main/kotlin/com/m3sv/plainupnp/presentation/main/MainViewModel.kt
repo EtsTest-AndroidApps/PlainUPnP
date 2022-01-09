@@ -7,10 +7,10 @@ import com.m3sv.plainupnp.common.preferences.PreferencesRepository
 import com.m3sv.plainupnp.data.upnp.UpnpRendererState
 import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl
 import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
-import com.m3sv.plainupnp.upnp.didl.ClingMedia
 import com.m3sv.plainupnp.upnp.folder.Folder
 import com.m3sv.plainupnp.upnp.manager.Result
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
+import com.m3sv.plainupnp.upnp.playback.PlaybackManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -43,6 +43,7 @@ sealed interface VolumeUpdate {
 class MainViewModel @Inject constructor(
     preferencesRepository: PreferencesRepository,
     private val upnpManager: UpnpManager,
+    private val playbackManager: PlaybackManager,
     private val volumeManager: BufferedVolumeManager,
 ) : ViewModel() {
 
@@ -82,7 +83,7 @@ class MainViewModel @Inject constructor(
         .upnpRendererState
         .stateIn(viewModelScope, SharingStarted.Eagerly, UpnpRendererState.Empty)
 
-    private val itemClicks: MutableSharedFlow<String> = MutableSharedFlow()
+    private val itemClicks: MutableSharedFlow<ItemViewModel> = MutableSharedFlow()
     private val isSelectRendererButtonExpanded: MutableStateFlow<Boolean> = MutableStateFlow(false)
     private val isSelectRendererDialogExpanded = MutableStateFlow(false)
 
@@ -134,10 +135,14 @@ class MainViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            itemClicks.onEach { id ->
+            itemClicks.onEach { item ->
                 updateState { it.copy(isLoading = true) }
-                val (result, item) = upnpManager.itemClick(id)
-                val playingNow = if (result is Result.Success && item is ClingMedia) id else null
+                val isMediaSelected = item.type != ItemType.CONTAINER && item.type != ItemType.MISC
+                if (isMediaSelected) {
+                    playbackManager.stopPlayback()
+                }
+                val result = upnpManager.itemClick(item.id)
+                val playingNow = if (result is Result.Success && isMediaSelected) item.id else null
                 updateState { it.copy(isLoading = false, lastPlayed = playingNow ?: it.lastPlayed) }
             }.collect()
         }
@@ -200,6 +205,7 @@ class MainViewModel @Inject constructor(
     val finishActivityFlow: Flow<Unit> = upnpManager
         .navigationStack
         .filter { it.isEmpty() }
+        .onEach { playbackManager.stopPlayback() }
         .map { }
 
     val showThumbnails: StateFlow<Boolean> = preferencesRepository
@@ -211,34 +217,22 @@ class MainViewModel @Inject constructor(
             initialValue = false
         )
 
-    fun itemClick(id: String) {
+    fun itemClick(item: ItemViewModel) {
         viewModelScope.launch {
-            itemClicks.emit(id)
+            itemClicks.emit(item)
         }
     }
 
-    fun expandSelectRendererButton() {
-        isSelectRendererButtonExpanded.value = true
+    fun setSelectRendererButtonState(expanded: Boolean) {
+        isSelectRendererButtonExpanded.value = expanded
     }
 
-    fun collapseSelectRendererButton() {
-        isSelectRendererButtonExpanded.value = false
+    fun setSelectRendererDialogState(expanded: Boolean) {
+        isSelectRendererDialogExpanded.value = expanded
     }
 
-    fun expandSelectRendererDialog() {
-        isSelectRendererDialogExpanded.value = true
-    }
-
-    fun collapseSelectRendererDialog() {
-        isSelectRendererDialogExpanded.value = false
-    }
-
-    fun expandSettingsDialog() {
-        updateState { it.copy(isSettingsDialogExpanded = true) }
-    }
-
-    fun collapseSettingsDialog() {
-        updateState { it.copy(isSettingsDialogExpanded = false) }
+    fun setSettingsDialogState(expanded: Boolean) {
+        isSelectRendererDialogExpanded.value = expanded
     }
 
     fun moveTo(progress: Int) {
@@ -249,9 +243,10 @@ class MainViewModel @Inject constructor(
 
     fun selectRenderer(identity: String?) {
         viewModelScope.launch {
-            collapseSelectRendererButton()
-            collapseSelectRendererDialog()
+            setSelectRendererButtonState(expanded = false)
+            setSelectRendererDialogState(expanded = false)
             delay(250)
+            playbackManager.stopPlayback()
             upnpManager.selectRenderer(identity)
         }
     }
@@ -259,12 +254,12 @@ class MainViewModel @Inject constructor(
     fun playerButtonClick(button: PlayerButton) {
         viewModelScope.launch {
             when (button) {
-                PlayerButton.PLAY -> upnpManager.togglePlayback()
-                PlayerButton.PREVIOUS -> upnpManager.playPrevious()
-                PlayerButton.NEXT -> upnpManager.playNext()
+                PlayerButton.PLAY -> playbackManager.togglePlayback()
+                PlayerButton.PREVIOUS -> playbackManager.playPrevious()
+                PlayerButton.NEXT -> playbackManager.playNext()
                 PlayerButton.RAISE_VOLUME -> volumeManager.raiseVolume()
                 PlayerButton.LOWER_VOLUME -> volumeManager.lowerVolume()
-                PlayerButton.STOP -> upnpManager.stopPlayback()
+                PlayerButton.STOP -> playbackManager.stopPlayback()
             }
         }
     }

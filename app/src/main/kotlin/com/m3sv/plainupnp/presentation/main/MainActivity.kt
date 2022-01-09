@@ -137,11 +137,11 @@ class MainActivity : ComponentActivity() {
                     renderers = viewState.renderersState.renderers,
                     selectedItem = viewState.renderersState.selectedRenderer,
                     onDismissDialog = {
-                        viewModel.collapseSelectRendererButton()
-                        viewModel.collapseSelectRendererDialog()
+                        viewModel.setSelectRendererButtonState(expanded = false)
+                        viewModel.setSelectRendererDialogState(expanded = false)
                     },
-                    onExpandButton = viewModel::expandSelectRendererButton,
-                    onExpandDialog = viewModel::expandSelectRendererDialog,
+                    onExpandButton = { viewModel.setSelectRendererButtonState(expanded = true) },
+                    onExpandDialog = { viewModel.setSelectRendererDialogState(expanded = true) },
                     onCancelClick = viewModel::unselectRenderer,
                     modifier = modifier
                 )
@@ -178,8 +178,8 @@ class MainActivity : ComponentActivity() {
             val settings: @Composable RowScope.() -> Unit = {
                 SettingsMenu(
                     isExpanded = viewState.isSettingsDialogExpanded,
-                    onExpandDialog = viewModel::expandSettingsDialog,
-                    onDismissDialog = viewModel::collapseSettingsDialog,
+                    onExpandDialog = { viewModel.setSettingsDialogState(expanded = true) },
+                    onDismissDialog = { viewModel.setSettingsDialogState(expanded = false) },
                     onSettingsClick = { openSettings() },
                     onFilterClick = {
                         showFilter = !showFilter
@@ -547,7 +547,7 @@ class MainActivity : ComponentActivity() {
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { viewModel.itemClick(item.id) }
+                                .clickable { viewModel.itemClick(item) }
                                 .let {
                                     if (selectedId == item.id)
                                         it.background(color.value)

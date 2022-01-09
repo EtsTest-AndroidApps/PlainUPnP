@@ -2,8 +2,10 @@ package com.m3sv.plainupnp.upnp.di
 
 import com.m3sv.plainupnp.interfaces.LifecycleManager
 import com.m3sv.plainupnp.upnp.cleanup.DefaultLifecycleManager
+import com.m3sv.plainupnp.upnp.manager.PlaybackManagerImpl
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
 import com.m3sv.plainupnp.upnp.manager.UpnpManagerImpl
+import com.m3sv.plainupnp.upnp.playback.PlaybackManager
 import com.m3sv.plainupnp.upnp.volume.UpnpVolumeManager
 import dagger.Binds
 import dagger.Module
@@ -29,6 +31,10 @@ abstract class UpnpBindersModule {
     @Binds
     @Singleton
     abstract fun bindLifecycleManager(defaultLifecycleManager: DefaultLifecycleManager): LifecycleManager
+
+    @Binds
+    @Singleton
+    abstract fun bindPlaybackManager(playbackManager: PlaybackManagerImpl): PlaybackManager
 
     companion object {
         @Provides

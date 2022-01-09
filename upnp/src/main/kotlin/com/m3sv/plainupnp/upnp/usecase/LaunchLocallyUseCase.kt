@@ -4,18 +4,18 @@ import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import com.m3sv.plainupnp.logging.Logger
+import com.m3sv.plainupnp.upnp.didl.ClingDIDLObject
 import com.m3sv.plainupnp.upnp.didl.ClingMedia
-import com.m3sv.plainupnp.upnp.manager.RenderItem
 import javax.inject.Inject
 
 class LaunchLocallyUseCase @Inject constructor(
     private val application: Application,
     private val logger: Logger
 ) {
-    operator fun invoke(item: RenderItem) {
-        val uri = item.didlItem.uri
+    operator fun invoke(didlItem: ClingDIDLObject) {
+        val uri = didlItem.uri
         if (uri != null) {
-            val contentType = when (item.didlItem) {
+            val contentType = when (didlItem) {
                 is ClingMedia.Audio -> "audio/*"
                 is ClingMedia.Image -> "image/*"
                 is ClingMedia.Video -> "video/*"

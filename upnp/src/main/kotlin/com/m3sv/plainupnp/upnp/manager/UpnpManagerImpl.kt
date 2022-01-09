@@ -199,8 +199,6 @@ class UpnpManagerImpl @Inject constructor(
 
     override suspend fun selectRenderer(id: String?) {
         withContext(Dispatchers.IO) {
-            stopUpdate()
-
             _selectedRenderer.value = if (selectedRenderer.value?.identity != id) {
                 _renderers.value[id]
             } else {
@@ -209,9 +207,23 @@ class UpnpManagerImpl @Inject constructor(
         }
     }
 
-    private suspend fun renderItem(item: RenderItem): Result = withContext(Dispatchers.IO) {
-        stopUpdate()
+    private var currentDuration: Long = 0L
 
+    private var pauseUpdate = false
+
+    private var remotePaused = false
+
+    override suspend fun itemClick(id: String): Result = withContext(Dispatchers.IO) {
+        val item: ClingDIDLObject = contentCache[id] ?: return@withContext Result.Error.Generic
+
+        when (item) {
+            is ClingContainer -> safeNavigateTo(folderId = id, folderName = item.title)
+            is ClingMedia -> playItem(item)
+            is MiscItem -> Result.Error.Generic
+        }
+    }
+
+    private suspend fun playItem(item: ClingDIDLObject): Result = withContext(Dispatchers.IO) {
         if (selectedRenderer.value == null) {
             launchLocally(item)
             return@withContext Result.Success
@@ -219,7 +231,7 @@ class UpnpManagerImpl @Inject constructor(
 
         val result = runCatching {
             withAvService { service ->
-                val didlItem = item.didlItem.didlObject as Item
+                val didlItem = item.didlObject as Item
                 val uri = didlItem.firstResource?.value ?: error("First resource or its value is null!")
                 val didlType = when (didlItem) {
                     is AudioItem -> "audioItem"
@@ -260,76 +272,6 @@ class UpnpManagerImpl @Inject constructor(
             result.getOrThrow()
         else
             Result.Error.Generic
-    }
-
-    private var currentDuration: Long = 0L
-
-    private var pauseUpdate = false
-
-    private var remotePaused = false
-
-    private suspend fun stopUpdate() {
-        withContext(Dispatchers.IO) {
-            if (selectedRenderer.value != null) {
-                stopPlayback()
-                updateChannel.emit(null)
-            }
-        }
-    }
-
-    private var currentIndex: Int = -1
-
-    override suspend fun playNext() {
-        withContext(Dispatchers.IO) {
-            if (currentIndex in 0 until currentContent.value.size - 1)
-                renderItem(RenderItem(currentContent.value[++currentIndex]))
-        }
-    }
-
-    override suspend fun itemClick(id: String): Pair<Result, ClingDIDLObject?> = withContext(Dispatchers.IO) {
-        val item: ClingDIDLObject = contentCache[id] ?: return@withContext Result.Error.Generic to null
-
-        when (item) {
-            is ClingContainer -> safeNavigateTo(folderId = id, folderName = item.title) to item
-            is ClingMedia -> playItem(item) to item
-            is MiscItem -> Result.Error.Generic to null
-        }
-    }
-
-    private suspend fun playItem(item: ClingDIDLObject): Result {
-        currentIndex = currentContent.value.indexOf(item)
-        return renderItem(RenderItem(item))
-    }
-
-    override suspend fun playPrevious() {
-        withContext(Dispatchers.IO) {
-            if (currentIndex in 1 until currentContent.value.size)
-                renderItem(RenderItem(currentContent.value[--currentIndex]))
-        }
-    }
-
-    override suspend fun pausePlayback() {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                avService?.let { service -> upnpRepository.pause(service) }
-            }.onFailure { logger.e(it, "Failed to pause playback") }
-        }
-    }
-
-    override suspend fun stopPlayback() {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                avService?.let { service -> upnpRepository.stop(service) }
-            }
-        }
-    }
-
-    override suspend fun resumePlayback() {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                avService?.let { service -> upnpRepository.play(service) }
-            }.onFailure { logger.e(it, "Failed to resume playback") }
-        }
     }
 
     override suspend fun seekTo(progress: Int) {
@@ -404,18 +346,6 @@ class UpnpManagerImpl @Inject constructor(
         folderStack.value = folderStack.value.dropLast(1)
     }
 
-    override suspend fun togglePlayback() {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                withAvService { service ->
-                    if (remotePaused)
-                        upnpRepository.play(service)
-                    else
-                        upnpRepository.pause(service)
-                }
-            }.onFailure { logger.e(it, "Failed to toggle playback, is remote paused? $remotePaused") }
-        }
-    }
 
     private val contentCache: MutableMap<String, ClingDIDLObject> = mutableMapOf()
 
@@ -425,7 +355,6 @@ class UpnpManagerImpl @Inject constructor(
 
     override val navigationStack: Flow<List<Folder>> = folderStack.onEach { folders ->
         if (folders.isEmpty()) {
-            stopUpdate()
             _selectedRenderer.value = null
         }
     }
@@ -490,7 +419,7 @@ class UpnpManagerImpl @Inject constructor(
         }
     }
 
-    private val avService: Service<*, *>?
+    override val avService: Service<*, *>?
         get() = selectedRenderer
             .value
             ?.let { renderer ->
@@ -541,7 +470,3 @@ class UpnpManagerImpl @Inject constructor(
         }
     }
 }
-
-@JvmInline
-value class RenderItem(val didlItem: ClingDIDLObject)
-
