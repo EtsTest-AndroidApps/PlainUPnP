@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.m3sv.plainupnp.common.util.pass
 import com.m3sv.plainupnp.interfaces.LifecycleManager
 import com.m3sv.plainupnp.interfaces.manageAppLifecycle
-import com.m3sv.plainupnp.logging.Logger
 import com.m3sv.plainupnp.upnp.manager.Result
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,7 +22,6 @@ class SelectContentDirectoryViewModel @Inject constructor(
     application: Application,
     lifecycleManager: LifecycleManager,
     private val upnpManager: UpnpManager,
-    private val logger: Logger
 ) : ViewModel() {
 
     private val _viewState: MutableStateFlow<ViewState> = MutableStateFlow(ViewState.empty())
@@ -66,7 +64,7 @@ class SelectContentDirectoryViewModel @Inject constructor(
                 Result.Error.Generic -> ViewState.NavigationResult.Error(R.string.content_directory_generic_error)
                 Result.Error.AvServiceNotFound -> ViewState.NavigationResult.Error(R.string.content_directory_could_not_find_av_service)
                 Result.Error.ContentDirectoryNotFound -> ViewState.NavigationResult.Error(R.string.content_directory_not_found)
-                Result.Error.MissingStoragePermission -> ViewState.NavigationResult.Error(R.string.content_directory_missing_permission)
+                Result.Error.MissingStoragePermission -> ViewState.NavigationResult.MissingPermission
                 Result.Success -> ViewState.NavigationResult.Success
             }
 
@@ -98,6 +96,8 @@ class SelectContentDirectoryViewModel @Inject constructor(
 
         sealed interface NavigationResult {
             object Success : NavigationResult
+
+            object MissingPermission : NavigationResult
 
             @JvmInline
             value class Error(val message: Int) : NavigationResult

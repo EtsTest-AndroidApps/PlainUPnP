@@ -48,6 +48,9 @@
     <string name="content_directory_could_not_find_av_service">Failed to find AudioVideo service, try to restart content directory</string>
     <string name="content_directory_not_found">Content directory disappeared</string>
     <string name="content_directory_missing_permission">Storage permission has been revoked!</string>
+    <string name="content_directory_missing_permission_title">Unable to read file storage</string>
+    <string name="content_directory_missing_permission_body">PlainUPnP is unable to stream files without storage permission</string>
+    <string name="open_settings">Open settings</string>
     <string name="selected_folders">Selected folders</string>
     <string name="application_mode_player">Player</string>
     <string name="application_mode_streaming">Streaming</string>
@@ -63,5 +66,5 @@
     <string name="sort_by_default">None</string>
     <string name="sort_by_alphabeticaly">Name</string>
     <string name="sort_by_size">Size</string>
-    <string name="sort_by_date">Date</string>
+    <string name="grant_permission">Grant permission</string>
 </resources>

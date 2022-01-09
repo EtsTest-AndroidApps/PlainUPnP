@@ -1,11 +1,16 @@
 package com.m3sv.selectcontentdirectory
 
+import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.viewModels
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -18,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.AlertDialog
 import androidx.compose.material.Card
 import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.Divider
@@ -25,20 +31,27 @@ import androidx.compose.material.LinearProgressIndicator
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Scaffold
 import androidx.compose.material.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m3sv.plainupnp.Router
 import com.m3sv.plainupnp.common.ThemeManager
 import com.m3sv.plainupnp.common.util.finishApp
 import com.m3sv.plainupnp.common.util.pass
 import com.m3sv.plainupnp.compose.AppTheme
 import com.m3sv.plainupnp.compose.LifecycleIndicator
+import com.m3sv.plainupnp.compose.OneContainedButton
 import com.m3sv.plainupnp.compose.OnePane
 import com.m3sv.plainupnp.compose.OneTitle
 import com.m3sv.plainupnp.compose.OneToolbar
@@ -58,8 +71,6 @@ class SelectContentDirectoryActivity : ComponentActivity() {
     @Inject
     lateinit var lifecycleManager: LifecycleManager
 
-    private val viewModel by viewModels<SelectContentDirectoryViewModel>()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -71,17 +82,23 @@ class SelectContentDirectoryActivity : ComponentActivity() {
         }
 
         setContent {
+            val viewModel: SelectContentDirectoryViewModel = viewModel()
             val viewState: ViewState by viewModel.viewState.collectAsState()
             val currentTheme by themeManager.theme.collectAsState()
 
             LaunchedEffect(viewState.navigationResult) {
                 when (val result = viewState.navigationResult) {
-                    is ViewState.NavigationResult.Error -> handleSelectDirectoryError(result.message)
-                    is ViewState.NavigationResult.Success -> handleSelectDirectorySuccess()
+                    is ViewState.NavigationResult.Error -> {
+                        handleSelectDirectoryError(result.message)
+                        viewModel.consumeNavigationResult()
+                    }
+                    is ViewState.NavigationResult.Success -> {
+                        handleSelectDirectorySuccess()
+                        viewModel.consumeNavigationResult()
+                    }
+                    is ViewState.NavigationResult.MissingPermission,
                     null -> pass
                 }
-
-                viewModel.consumeNavigationResult()
             }
 
             AppTheme(currentTheme.isDarkTheme()) {
@@ -154,6 +171,17 @@ class SelectContentDirectoryActivity : ComponentActivity() {
                                     }
                                 )
                         }
+
+                        if (viewState.navigationResult == ViewState.NavigationResult.MissingPermission) {
+                            StoragePermissionDialog(
+                                onDismiss = { viewModel.consumeNavigationResult() },
+                                onPermissionGranted = { viewModel.consumeNavigationResult() },
+                                onPermissionRefused = {
+                                    viewModel.consumeNavigationResult()
+                                    openStoragePermissionSettings()
+                                }
+                            )
+                        }
                     }
 
                     val lifecycleState by lifecycleManager.lifecycleState.collectAsState()
@@ -162,6 +190,64 @@ class SelectContentDirectoryActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    @Composable
+    fun StoragePermissionDialog(
+        onDismiss: () -> Unit,
+        onPermissionGranted: () -> Unit,
+        onPermissionRefused: () -> Unit
+    ) {
+        var hasPermission: Boolean? by remember {
+            mutableStateOf(null)
+        }
+
+        LaunchedEffect(null) {
+            hasPermission = null
+        }
+
+        val launcher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { isGranted ->
+            if (isGranted)
+                onPermissionGranted()
+
+            hasPermission = isGranted
+        }
+
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = {
+                Text(
+                    stringResource(R.string.content_directory_missing_permission_title),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            },
+            text = {
+                Text(stringResource(R.string.content_directory_missing_permission_body))
+            },
+            buttons = {
+                Crossfade(targetState = hasPermission) { hasPermission ->
+                    when (hasPermission) {
+                        false -> OneContainedButton(
+                            text = stringResource(R.string.open_settings), modifier = Modifier
+                                .padding(horizontal = 24.dp)
+                                .padding(bottom = 8.dp)
+                        ) {
+                            onPermissionRefused()
+                        }
+                        else -> OneContainedButton(
+                            text = stringResource(R.string.grant_permission),
+                            modifier = Modifier
+                                .padding(horizontal = 24.dp)
+                                .padding(bottom = if (hasPermission == false) 8.dp else 24.dp)
+                        ) {
+                            launcher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                        }
+                    }
+                }
+            }
+        )
     }
 
     private fun handleGearClick() {
@@ -176,6 +262,16 @@ class SelectContentDirectoryActivity : ComponentActivity() {
         Toast
             .makeText(this, message, Toast.LENGTH_SHORT)
             .show()
+    }
+
+    private fun openStoragePermissionSettings() {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:$packageName")
+        )
+        intent.addCategory(Intent.CATEGORY_DEFAULT)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        startActivity(intent)
     }
 
     override fun onBackPressed() {
