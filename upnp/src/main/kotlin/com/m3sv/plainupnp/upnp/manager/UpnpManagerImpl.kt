@@ -112,7 +112,7 @@ class UpnpManagerImpl @Inject constructor(
 
                 val title = didlItem.title
                 val artist = didlItem.creator
-                val uri = didlItem.firstResource?.value ?: error("no uri")
+                val uri = didlItem.firstResource?.value ?: return@scan launch {}
 
                 launch {
                     while (isActive) {
@@ -126,7 +126,10 @@ class UpnpManagerImpl @Inject constructor(
                             runCatching { upnpRepository.getPositionInfo(service) }.getOrNull()
                         }
 
-                        suspend fun processInfo(transportInfo: TransportInfo, positionInfo: PositionInfo) {
+                        suspend fun processInfo(transportInfo: TransportInfo?, positionInfo: PositionInfo?) {
+                            if (transportInfo == null || positionInfo == null)
+                                return
+
                             remotePaused = transportInfo.currentTransportState == TransportState.PAUSED_PLAYBACK
 
                             val state = UpnpRendererState.Default(
@@ -155,8 +158,8 @@ class UpnpManagerImpl @Inject constructor(
                         }
 
                         processInfo(
-                            transportInfo.await() ?: return@launch,
-                            positionInfo.await() ?: return@launch
+                            transportInfo.await(),
+                            positionInfo.await()
                         )
                     }
                 }
