@@ -4,12 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m3sv.plainupnp.R
 import com.m3sv.plainupnp.common.preferences.PreferencesRepository
-import com.m3sv.plainupnp.data.upnp.UpnpRendererState
+import com.m3sv.plainupnp.common.util.pass
+import com.m3sv.plainupnp.data.upnp.PlaybackState
 import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl
 import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
 import com.m3sv.plainupnp.upnp.folder.Folder
 import com.m3sv.plainupnp.upnp.manager.Result
 import com.m3sv.plainupnp.upnp.manager.UpnpManager
+import com.m3sv.plainupnp.upnp.playback.PlaybackItem
 import com.m3sv.plainupnp.upnp.playback.PlaybackManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -79,9 +81,9 @@ class MainViewModel @Inject constructor(
             initialValue = listOf()
         )
 
-    val upnpState: StateFlow<UpnpRendererState> = upnpManager
-        .upnpRendererState
-        .stateIn(viewModelScope, SharingStarted.Eagerly, UpnpRendererState.Empty)
+    val upnpState: StateFlow<PlaybackState> = playbackManager
+        .playbackState
+        .stateIn(viewModelScope, SharingStarted.Eagerly, PlaybackState.Empty)
 
     private val itemClicks: MutableSharedFlow<ItemViewModel> = MutableSharedFlow()
     private val isSelectRendererButtonExpanded: MutableStateFlow<Boolean> = MutableStateFlow(false)
@@ -136,13 +138,23 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             itemClicks.onEach { item ->
                 updateState { it.copy(isLoading = true) }
-                val isMediaSelected = item.type != ItemType.CONTAINER && item.type != ItemType.MISC
-                if (isMediaSelected) {
-                    playbackManager.stopPlayback()
+                var playingNowId: String? = null
+
+                when (item.type) {
+                    ItemType.CONTAINER -> upnpManager.itemClick(item.id)
+                    ItemType.AUDIO,
+                    ItemType.VIDEO,
+                    ItemType.IMAGE -> with(playbackManager) {
+                        stopPlayback()
+                        val result = play(PlaybackItem(item.id, item.title))
+                        if (result is Result.Success) {
+                            playingNowId = item.id
+                        }
+                    }
+                    ItemType.MISC -> pass
                 }
-                val result = upnpManager.itemClick(item.id)
-                val playingNow = if (result is Result.Success && isMediaSelected) item.id else null
-                updateState { it.copy(isLoading = false, lastPlayed = playingNow ?: it.lastPlayed) }
+
+                updateState { it.copy(isLoading = false, lastPlayed = playingNowId ?: it.lastPlayed) }
             }.collect()
         }
 
@@ -204,7 +216,10 @@ class MainViewModel @Inject constructor(
     val finishActivityFlow: Flow<Unit> = upnpManager
         .navigationStack
         .filter { it.isEmpty() }
-        .onEach { playbackManager.stopPlayback() }
+        .onEach {
+            playbackManager.stopPlayback()
+            upnpManager.selectRenderer(null)
+        }
         .map { }
 
     val showThumbnails: StateFlow<Boolean> = preferencesRepository

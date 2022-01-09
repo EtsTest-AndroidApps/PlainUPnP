@@ -15,16 +15,11 @@ import com.m3sv.plainupnp.upnp.discovery.device.ContentDirectories
 import com.m3sv.plainupnp.upnp.discovery.device.Renderers
 import com.m3sv.plainupnp.upnp.folder.Folder
 import com.m3sv.plainupnp.upnp.folder.FolderModel
-import com.m3sv.plainupnp.upnp.trackmetadata.TrackMetadata
-import com.m3sv.plainupnp.upnp.usecase.LaunchLocallyUseCase
 import com.m3sv.plainupnp.upnp.util.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.fourthline.cling.model.meta.Service
 import org.fourthline.cling.model.types.UDAServiceType
-import org.fourthline.cling.support.model.PositionInfo
-import org.fourthline.cling.support.model.TransportInfo
-import org.fourthline.cling.support.model.TransportState
 import org.fourthline.cling.support.model.item.*
 import timber.log.Timber
 import java.util.*
@@ -50,7 +45,6 @@ private typealias DeviceCache = Map<String, UpnpDevice>
 class UpnpManagerImpl @Inject constructor(
     renderersDiscovery: Renderers,
     contentDirectoriesDiscovery: ContentDirectories,
-    private val launchLocally: LaunchLocallyUseCase,
     private val upnpRepository: UpnpRepository,
     private val contentRepository: UpnpContentRepositoryImpl,
     private val logger: Logger
@@ -61,9 +55,6 @@ class UpnpManagerImpl @Inject constructor(
     override val selectedRenderer: StateFlow<UpnpDevice?> = _selectedRenderer.asStateFlow()
 
     private val selectedContentDirectory: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
-
-    private val _upnpRendererState = MutableSharedFlow<UpnpRendererState>()
-    override val upnpRendererState: Flow<UpnpRendererState> = _upnpRendererState
 
     private val _contentDirectories: StateFlow<DeviceCache> =
         contentDirectoriesDiscovery().scan<UpnpDeviceEvent, DeviceCache>(mapOf()) { acc, event ->
@@ -89,73 +80,8 @@ class UpnpManagerImpl @Inject constructor(
 
     override val renderers: Flow<Collection<UpnpDevice>> = _renderers.map { it.values }
 
-    private val updateChannel = MutableSharedFlow<Pair<Item, Service<*, *>>?>()
 
     init {
-        scope.launch {
-            updateChannel.scan(launch { }) { accumulator, pair ->
-                accumulator.cancel()
-
-                if (pair == null)
-                    return@scan launch { }
-
-                val (didlItem, service) = pair
-
-                val type = when (didlItem) {
-                    is AudioItem -> UpnpItemType.AUDIO
-                    is VideoItem -> UpnpItemType.VIDEO
-                    else -> UpnpItemType.UNKNOWN
-                }
-
-                val title = didlItem.title
-                val artist = didlItem.creator
-                val uri = didlItem.firstResource?.value ?: return@scan launch {}
-
-                launch {
-                    while (isActive) {
-                        delay(500)
-
-                        val transportInfo = async {
-                            runCatching { upnpRepository.getTransportInfo(service) }.getOrNull()
-                        }
-
-                        val positionInfo = async {
-                            runCatching { upnpRepository.getPositionInfo(service) }.getOrNull()
-                        }
-
-                        suspend fun processInfo(transportInfo: TransportInfo?, positionInfo: PositionInfo?) {
-                            if (transportInfo == null || positionInfo == null)
-                                return
-
-                            val state = UpnpRendererState.Default(
-                                uri = uri,
-                                type = type,
-                                state = transportInfo.currentTransportState,
-                                remainingDuration = positionInfo.remainingDuration,
-                                duration = positionInfo.duration,
-                                position = positionInfo.position,
-                                elapsedPercent = positionInfo.elapsedPercent,
-                                durationSeconds = positionInfo.trackDurationSeconds,
-                                title = title,
-                                artist = artist ?: ""
-                            )
-
-                            _upnpRendererState.emit(state)
-
-                            if (transportInfo.currentTransportState == TransportState.STOPPED) {
-                                _upnpRendererState.emit(UpnpRendererState.Empty)
-                                cancel()
-                            }
-                        }
-
-                        processInfo(
-                            transportInfo.await(),
-                            positionInfo.await()
-                        )
-                    }
-                }
-            }.collect()
-        }
 
         scope.launch {
             contentRepository.refreshState.collect {
@@ -229,65 +155,17 @@ class UpnpManagerImpl @Inject constructor(
     }
 
     override suspend fun itemClick(id: String): Result = withContext(Dispatchers.IO) {
-        val item: ClingDIDLObject = contentCache[id] ?: return@withContext Result.Error.Generic
+        val item: ClingDIDLObject = getUpnpItemById(id) ?: return@withContext Result.Error.Generic
 
         when (item) {
             is ClingContainer -> safeNavigateTo(folderId = id, folderName = item.title)
-            is ClingMedia -> playItem(item)
+            is ClingMedia,
             is MiscItem -> Result.Error.Generic
         }
     }
 
-    private suspend fun playItem(item: ClingDIDLObject): Result = withContext(Dispatchers.IO) {
-        if (selectedRenderer.value == null) {
-            launchLocally(item)
-            return@withContext Result.Success
-        }
+    override fun getUpnpItemById(id: String): ClingDIDLObject? = contentCache[id]
 
-        val result = runCatching {
-            avService?.let { service ->
-                val didlItem = item.didlObject as Item
-                val uri = didlItem.firstResource?.value ?: error("First resource or its value is null!")
-                val didlType = when (didlItem) {
-                    is AudioItem -> "audioItem"
-                    is VideoItem -> "videoItem"
-                    is ImageItem -> "imageItem"
-                    is PlaylistItem -> "playlistItem"
-                    is TextItem -> "textItem"
-                    else -> null
-                }
-
-                val newMetadata = with(didlItem) {
-                    // TODO genre && artURI
-                    TrackMetadata(
-                        id,
-                        title,
-                        creator,
-                        "",
-                        "",
-                        firstResource.value,
-                        "object.item.$didlType"
-                    )
-                }
-
-                upnpRepository.setUri(service, uri, newMetadata)
-                upnpRepository.play(service)
-
-                when (didlItem) {
-                    is AudioItem,
-                    is VideoItem,
-                    -> updateChannel.emit(didlItem to service)
-                    is ImageItem -> _upnpRendererState.emit(UpnpRendererState.Empty)
-                }
-                Result.Success
-            } ?: Result.Error.AvServiceNotFound
-        }
-
-        if (result.isSuccess)
-            result.getOrThrow()
-        else
-            Result.Error.Generic
-    }
 
     override suspend fun navigateTo(folder: Folder) {
         withContext(Dispatchers.IO) {
@@ -312,11 +190,7 @@ class UpnpManagerImpl @Inject constructor(
 
     private val folderStack: MutableStateFlow<List<Folder>> = MutableStateFlow(listOf())
 
-    override val navigationStack: Flow<List<Folder>> = folderStack.onEach { folders ->
-        if (folders.isEmpty()) {
-            _selectedRenderer.value = null
-        }
-    }
+    override val navigationStack: Flow<List<Folder>> = folderStack
 
     private suspend inline fun safeNavigateTo(
         folderId: String,

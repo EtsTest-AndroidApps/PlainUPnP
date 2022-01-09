@@ -2,7 +2,7 @@ package com.m3sv.plainupnp.data.upnp
 
 import org.fourthline.cling.support.model.TransportState
 
-sealed class UpnpRendererState {
+sealed interface PlaybackState {
     data class Default(
         val uri: String,
         val type: UpnpItemType,
@@ -14,9 +14,9 @@ sealed class UpnpRendererState {
         val durationSeconds: Long,
         val title: String,
         val artist: String?,
-    ) : UpnpRendererState()
+    ) : PlaybackState
 
-    object Empty : UpnpRendererState()
+    object Empty : PlaybackState
 }
 
 

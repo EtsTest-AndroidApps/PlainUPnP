@@ -87,7 +87,7 @@ import com.m3sv.plainupnp.compose.AppTheme
 import com.m3sv.plainupnp.compose.LifecycleIndicator
 import com.m3sv.plainupnp.compose.OneToolbar
 import com.m3sv.plainupnp.compose.util.isDarkTheme
-import com.m3sv.plainupnp.data.upnp.UpnpRendererState
+import com.m3sv.plainupnp.data.upnp.PlaybackState
 import com.m3sv.plainupnp.interfaces.LifecycleManager
 import com.m3sv.plainupnp.presentation.main.MainViewModel.ViewState
 import com.m3sv.plainupnp.presentation.settings.SettingsActivity
@@ -128,7 +128,7 @@ class MainActivity : ComponentActivity() {
             val upnpState by viewModel.upnpState.collectAsState()
             val showThumbnails by viewModel.showThumbnails.collectAsState()
             val currentTheme by themeManager.theme.collectAsState()
-            val showControls = upnpState !is UpnpRendererState.Empty
+            val showControls = upnpState !is PlaybackState.Empty
             val configuration = LocalConfiguration.current
 
             val floatingActionButton: @Composable (Modifier) -> Unit = { modifier ->
@@ -399,7 +399,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Portrait(
-        upnpState: UpnpRendererState,
+        upnpState: PlaybackState,
         showControls: Boolean,
         navigationBar: ModifierComposableFactory,
         folderContents: ModifierComposableFactory,
@@ -442,7 +442,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Landscape(
-        upnpState: UpnpRendererState,
+        upnpState: PlaybackState,
         showControls: Boolean,
         folderContents: ModifierComposableFactory,
         floatingActionButton: @Composable (Modifier) -> Unit,
@@ -660,8 +660,8 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun Controls(upnpState: UpnpRendererState, modifier: Modifier = Modifier) {
-        val defaultState: UpnpRendererState.Default? = upnpState as? UpnpRendererState.Default
+    private fun Controls(upnpState: PlaybackState, modifier: Modifier = Modifier) {
+        val defaultState: PlaybackState.Default? = upnpState as? PlaybackState.Default
 
         Column(modifier = modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -894,7 +894,7 @@ class MainActivity : ComponentActivity() {
         viewModel.navigateBack()
     }
 
-    private val UpnpRendererState.Default.icon: Int
+    private val PlaybackState.Default.icon: Int
         inline get() = when (state) {
             TransportState.PLAYING -> R.drawable.ic_pause
             TransportState.STOPPED,
