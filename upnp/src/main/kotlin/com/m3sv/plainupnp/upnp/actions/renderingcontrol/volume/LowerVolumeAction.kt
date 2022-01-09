@@ -9,11 +9,11 @@ class LowerVolumeAction @Inject constructor(
 ) {
     suspend operator fun invoke(
         renderingService: Service<*, *>,
-        step: Int
+        step: Volume
     ): Volume? {
         val currentVolume = getVolumeAction(renderingService) ?: return null
 
-        var delta = currentVolume - Volume(step)
+        var delta = currentVolume - step
 
         if (delta.value < 0) {
             delta = Volume(0)

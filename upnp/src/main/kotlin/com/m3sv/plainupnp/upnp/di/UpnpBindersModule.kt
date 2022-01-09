@@ -7,6 +7,7 @@ import com.m3sv.plainupnp.upnp.manager.UpnpManager
 import com.m3sv.plainupnp.upnp.manager.UpnpManagerImpl
 import com.m3sv.plainupnp.upnp.playback.PlaybackManager
 import com.m3sv.plainupnp.upnp.volume.UpnpVolumeManager
+import com.m3sv.plainupnp.upnp.volume.VolumeManager
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -22,7 +23,7 @@ abstract class UpnpBindersModule {
 
     @Binds
     @Singleton
-    abstract fun bindUpnpVolumeManager(volumeManagerImpl: UpnpManager): UpnpVolumeManager
+    abstract fun bindUpnpVolumeManager(upnpVolumeManager: UpnpVolumeManager): VolumeManager
 
     @Binds
     @Singleton

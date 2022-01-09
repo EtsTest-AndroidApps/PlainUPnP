@@ -8,7 +8,6 @@ import com.m3sv.plainupnp.upnp.ContentUpdateState
 import com.m3sv.plainupnp.upnp.UpnpContentRepositoryImpl
 import com.m3sv.plainupnp.upnp.UpnpRepository
 import com.m3sv.plainupnp.upnp.actions.misc.BrowseResult
-import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
 import com.m3sv.plainupnp.upnp.didl.ClingContainer
 import com.m3sv.plainupnp.upnp.didl.ClingDIDLObject
 import com.m3sv.plainupnp.upnp.didl.ClingMedia
@@ -20,7 +19,6 @@ import com.m3sv.plainupnp.upnp.folder.FolderModel
 import com.m3sv.plainupnp.upnp.trackmetadata.TrackMetadata
 import com.m3sv.plainupnp.upnp.usecase.LaunchLocallyUseCase
 import com.m3sv.plainupnp.upnp.util.*
-import com.m3sv.plainupnp.upnp.volume.VolumeManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.fourthline.cling.model.meta.Service
@@ -56,12 +54,10 @@ class UpnpManagerImpl @Inject constructor(
     contentDirectoriesDiscovery: ContentDirectories,
     private val launchLocally: LaunchLocallyUseCase,
     private val upnpRepository: UpnpRepository,
-    private val volumeManager: VolumeManager,
     private val contentRepository: UpnpContentRepositoryImpl,
     private val logger: Logger
 ) : UpnpManager {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    override val volumeFlow: Flow<Volume> = volumeManager.volumeFlow
     private val _selectedRenderer: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
     override val selectedRenderer: StateFlow<UpnpDevice?> = _selectedRenderer.asStateFlow()
     private val selectedContentDirectory: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
@@ -293,42 +289,6 @@ class UpnpManagerImpl @Inject constructor(
         }
     }
 
-    override suspend fun raiseVolume(step: Int) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                withRcService { service -> volumeManager.raiseVolume(service, step) }
-            }.onFailure { logger.e(it, "Failed to raise volume with step $step") }
-        }
-    }
-
-    override suspend fun lowerVolume(step: Int) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                withRcService { service -> volumeManager.lowerVolume(service, step) }
-            }.onFailure { logger.e(it, "Failed to lower volume with step $step") }
-        }
-    }
-
-    override suspend fun muteVolume(mute: Boolean) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                withRcService { service -> volumeManager.muteVolume(service, mute) }
-            }.onFailure { logger.e(it, "Failed to mute volume $mute") }
-        }
-    }
-
-    override suspend fun setVolume(volume: Int) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                withRcService { service -> volumeManager.setVolume(service, Volume(volume)) }
-            }.onFailure { logger.e(it, "Failed to set volume with value $volume") }
-        }
-    }
-
-    override suspend fun getVolume(): Volume = withContext(Dispatchers.IO) {
-        withRcService { service -> volumeManager.getVolume(service) } ?: Volume(0)
-    }
-
     override suspend fun navigateTo(folder: Folder) {
         withContext(Dispatchers.IO) {
             val index = folderStack.value.indexOf(folder)
@@ -435,7 +395,7 @@ class UpnpManagerImpl @Inject constructor(
                 }
             }
 
-    private val rcService: Service<*, *>?
+    override val rcService: Service<*, *>?
         get() = selectedRenderer
             .value?.let { renderer ->
                 val service: Service<*, *> = renderer

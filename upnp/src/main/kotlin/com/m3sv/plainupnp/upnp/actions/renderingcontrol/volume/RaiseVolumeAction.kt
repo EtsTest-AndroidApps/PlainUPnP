@@ -7,9 +7,9 @@ class RaiseVolumeAction @Inject constructor(
     private val setVolumeAction: SetVolumeAction,
     private val getVolumeAction: GetVolumeAction
 ) {
-    suspend operator fun invoke(service: Service<*, *>, step: Int): Volume? {
+    suspend operator fun invoke(service: Service<*, *>, step: Volume): Volume? {
         val currentVolume = getVolumeAction(service) ?: return null
-        val newVolume = currentVolume + Volume(step)
+        val newVolume = currentVolume + step
         return setVolumeAction(service, newVolume)
     }
 }

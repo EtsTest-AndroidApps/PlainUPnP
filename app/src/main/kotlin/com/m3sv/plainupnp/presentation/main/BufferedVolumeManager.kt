@@ -1,6 +1,7 @@
 package com.m3sv.plainupnp.presentation.main
 
-import com.m3sv.plainupnp.upnp.volume.UpnpVolumeManager
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
+import com.m3sv.plainupnp.upnp.volume.VolumeManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -9,7 +10,7 @@ import javax.inject.Inject
 import kotlin.properties.Delegates
 
 
-class BufferedVolumeManager @Inject constructor(volumeManager: UpnpVolumeManager) : UpnpVolumeManager by volumeManager {
+class BufferedVolumeManager @Inject constructor(volumeManager: VolumeManager) : VolumeManager by volumeManager {
 
     private var timeoutJob: Job? = null
 
@@ -18,12 +19,12 @@ class BufferedVolumeManager @Inject constructor(volumeManager: UpnpVolumeManager
     }
 
     suspend fun lowerVolume() {
-        lowerVolume(currentStep)
+        lowerVolume(Volume(currentStep))
         triggerStep()
     }
 
     suspend fun raiseVolume() {
-        raiseVolume(currentStep)
+        raiseVolume(Volume(currentStep))
         triggerStep()
     }
 
