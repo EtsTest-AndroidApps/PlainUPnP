@@ -19,7 +19,6 @@ interface UpnpManager {
     suspend fun navigateBack()
     suspend fun navigateTo(folder: Folder)
     suspend fun itemClick(id: String): Result
-    suspend fun seekTo(progress: Int)
     suspend fun selectContentDirectory(id: String?): Result
     suspend fun selectRenderer(id: String?)
 }

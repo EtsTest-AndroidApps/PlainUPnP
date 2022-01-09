@@ -1,7 +1,6 @@
 package com.m3sv.plainupnp.upnp.manager
 
 
-import com.m3sv.plainupnp.common.util.formatTime
 import com.m3sv.plainupnp.data.upnp.*
 import com.m3sv.plainupnp.logging.Logger
 import com.m3sv.plainupnp.upnp.ContentUpdateState
@@ -31,7 +30,6 @@ import timber.log.Timber
 import java.util.*
 import javax.inject.Inject
 
-private const val MAX_PROGRESS = 100
 private const val ROOT_FOLDER_ID = "0"
 private const val AV_TRANSPORT = "AVTransport"
 private const val RENDERING_CONTROL = "RenderingControl"
@@ -126,8 +124,6 @@ class UpnpManagerImpl @Inject constructor(
                             if (transportInfo == null || positionInfo == null)
                                 return
 
-                            remotePaused = transportInfo.currentTransportState == TransportState.PAUSED_PLAYBACK
-
                             val state = UpnpRendererState.Default(
                                 uri = uri,
                                 type = type,
@@ -141,11 +137,7 @@ class UpnpManagerImpl @Inject constructor(
                                 artist = artist ?: ""
                             )
 
-                            currentDuration = positionInfo.trackDurationSeconds
-
-                            if (!pauseUpdate) upnpInnerStateChannel.emit(state)
-
-                            Timber.d("Got new state: $state")
+                            upnpInnerStateChannel.emit(state)
 
                             if (transportInfo.currentTransportState == TransportState.STOPPED) {
                                 upnpInnerStateChannel.emit(UpnpRendererState.Empty)
@@ -178,6 +170,37 @@ class UpnpManagerImpl @Inject constructor(
         }
     }
 
+    override val avService: Service<*, *>?
+        get() = selectedRenderer
+            .value
+            ?.let { renderer ->
+                val service: Service<*, *> = renderer
+                    .device
+                    .findService(UDAServiceType(AV_TRANSPORT))
+                    ?: return null
+
+                if (service.hasActions()) {
+                    service
+                } else {
+                    null
+                }
+            }
+
+    override val rcService: Service<*, *>?
+        get() = selectedRenderer
+            .value?.let { renderer ->
+                val service: Service<*, *> = renderer
+                    .device
+                    .findService(UDAServiceType(RENDERING_CONTROL))
+                    ?: return null
+
+                if (service.hasActions())
+                    service
+                else {
+                    null
+                }
+            }
+
     override suspend fun selectContentDirectory(id: String?): Result = withContext(Dispatchers.IO) {
         val contentDirectory = _contentDirectories.value[id]
         folderStack.value = listOf()
@@ -202,12 +225,6 @@ class UpnpManagerImpl @Inject constructor(
             }
         }
     }
-
-    private var currentDuration: Long = 0L
-
-    private var pauseUpdate = false
-
-    private var remotePaused = false
 
     override suspend fun itemClick(id: String): Result = withContext(Dispatchers.IO) {
         val item: ClingDIDLObject = contentCache[id] ?: return@withContext Result.Error.Generic
@@ -270,25 +287,6 @@ class UpnpManagerImpl @Inject constructor(
             Result.Error.Generic
     }
 
-    override suspend fun seekTo(progress: Int) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                avService?.let { service ->
-                    pauseUpdate = true
-                    upnpRepository.seekTo(
-                        service = service,
-                        time = formatTime(
-                            max = MAX_PROGRESS,
-                            progress = progress,
-                            duration = currentDuration
-                        )
-                    )
-                    pauseUpdate = false
-                }
-            }.onFailure { logger.e(it, "Failed to seek progress $progress") }
-        }
-    }
-
     override suspend fun navigateTo(folder: Folder) {
         withContext(Dispatchers.IO) {
             val index = folderStack.value.indexOf(folder)
@@ -305,7 +303,6 @@ class UpnpManagerImpl @Inject constructor(
     override suspend fun navigateBack() {
         folderStack.value = folderStack.value.dropLast(1)
     }
-
 
     private val contentCache: MutableMap<String, ClingDIDLObject> = mutableMapOf()
 
@@ -378,35 +375,4 @@ class UpnpManagerImpl @Inject constructor(
             }
         }
     }
-
-    override val avService: Service<*, *>?
-        get() = selectedRenderer
-            .value
-            ?.let { renderer ->
-                val service: Service<*, *> = renderer
-                    .device
-                    .findService(UDAServiceType(AV_TRANSPORT))
-                    ?: return null
-
-                if (service.hasActions()) {
-                    service
-                } else {
-                    null
-                }
-            }
-
-    override val rcService: Service<*, *>?
-        get() = selectedRenderer
-            .value?.let { renderer ->
-                val service: Service<*, *> = renderer
-                    .device
-                    .findService(UDAServiceType(RENDERING_CONTROL))
-                    ?: return null
-
-                if (service.hasActions())
-                    service
-                else {
-                    null
-                }
-            }
 }

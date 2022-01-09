@@ -237,7 +237,7 @@ class MainViewModel @Inject constructor(
 
     fun moveTo(progress: Int) {
         viewModelScope.launch {
-            upnpManager.seekTo(progress)
+            playbackManager.seekTo(progress)
         }
     }
 
@@ -254,7 +254,8 @@ class MainViewModel @Inject constructor(
     fun playerButtonClick(button: PlayerButton) {
         viewModelScope.launch {
             when (button) {
-                PlayerButton.PLAY -> playbackManager.togglePlayback()
+                PlayerButton.PLAY -> playbackManager.resumePlayback()
+                PlayerButton.PAUSE -> playbackManager.pausePlayback()
                 PlayerButton.PREVIOUS -> playbackManager.playPrevious()
                 PlayerButton.NEXT -> playbackManager.playNext()
                 PlayerButton.RAISE_VOLUME -> volumeManager.raiseVolume()

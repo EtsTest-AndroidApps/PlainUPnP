@@ -696,7 +696,14 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                IconButton(onClick = { viewModel.playerButtonClick(PlayerButton.PLAY) }) {
+                IconButton(onClick = {
+                    val button = if (defaultState?.state == TransportState.PAUSED_PLAYBACK)
+                        PlayerButton.PLAY
+                    else
+                        PlayerButton.PAUSE
+
+                    viewModel.playerButtonClick(button)
+                }) {
                     Icon(
                         painter = painterResource(id = defaultState?.icon ?: R.drawable.ic_play),
                         contentDescription = null,

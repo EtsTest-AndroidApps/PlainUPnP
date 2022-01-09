@@ -1,13 +1,16 @@
-package com.m3sv.plainupnp.upnp.manager
+package com.m3sv.plainupnp.upnp.playback
 
+import com.m3sv.plainupnp.common.util.formatTime
 import com.m3sv.plainupnp.logging.Logger
 import com.m3sv.plainupnp.upnp.UpnpRepository
-import com.m3sv.plainupnp.upnp.playback.PlaybackManager
+import com.m3sv.plainupnp.upnp.manager.UpnpManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
-class PlaybackManagerImpl @Inject constructor(
+private const val MAX_PROGRESS = 100L
+
+class UpnpPlaybackManager @Inject constructor(
     private val upnpManager: UpnpManager,
     private val upnpRepository: UpnpRepository,
     private val logger: Logger
@@ -45,16 +48,25 @@ class PlaybackManagerImpl @Inject constructor(
         TODO("Not yet implemented")
     }
 
-    override suspend fun togglePlayback() {
-//        withContext(Dispatchers.IO) {
-//            runCatching {
-//                upnpManager.avService?.let { service ->
-//                    if (remotePaused)
-//                        upnpRepository.play(service)
-//                    else
-//                        upnpRepository.pause(service)
-//                }
-//            }.onFailure { logger.e(it, "Failed to toggle playback, is remote paused? $remotePaused") }
-//        }
+    override suspend fun seekTo(progress: Int) {
+        upnpManager.avService?.let { service ->
+            withContext(Dispatchers.IO) {
+                try {
+                    val positionInfo = upnpRepository.getPositionInfo(service)
+                    val trackDuration = positionInfo?.trackDurationSeconds ?: return@withContext
+
+                    upnpRepository.seekTo(
+                        service = service,
+                        time = formatTime(
+                            max = MAX_PROGRESS,
+                            progress = progress.toLong(),
+                            duration = trackDuration
+                        )
+                    )
+                } catch (e: Exception) {
+                    logger.e(e, "Failed to seek progress $progress")
+                }
+            }
+        }
     }
 }
