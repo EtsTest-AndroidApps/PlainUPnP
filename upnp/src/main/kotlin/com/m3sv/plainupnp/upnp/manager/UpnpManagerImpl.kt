@@ -56,11 +56,14 @@ class UpnpManagerImpl @Inject constructor(
     private val logger: Logger
 ) : UpnpManager {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     private val _selectedRenderer: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
     override val selectedRenderer: StateFlow<UpnpDevice?> = _selectedRenderer.asStateFlow()
+
     private val selectedContentDirectory: MutableStateFlow<UpnpDevice?> = MutableStateFlow(null)
-    private val upnpInnerStateChannel = MutableSharedFlow<UpnpRendererState>()
-    override val upnpRendererState: Flow<UpnpRendererState> = upnpInnerStateChannel
+
+    private val _upnpRendererState = MutableSharedFlow<UpnpRendererState>()
+    override val upnpRendererState: Flow<UpnpRendererState> = _upnpRendererState
 
     private val _contentDirectories: StateFlow<DeviceCache> =
         contentDirectoriesDiscovery().scan<UpnpDeviceEvent, DeviceCache>(mapOf()) { acc, event ->
@@ -137,10 +140,10 @@ class UpnpManagerImpl @Inject constructor(
                                 artist = artist ?: ""
                             )
 
-                            upnpInnerStateChannel.emit(state)
+                            _upnpRendererState.emit(state)
 
                             if (transportInfo.currentTransportState == TransportState.STOPPED) {
-                                upnpInnerStateChannel.emit(UpnpRendererState.Empty)
+                                _upnpRendererState.emit(UpnpRendererState.Empty)
                                 cancel()
                             }
                         }
@@ -172,8 +175,7 @@ class UpnpManagerImpl @Inject constructor(
 
     override val avService: Service<*, *>?
         get() = selectedRenderer
-            .value
-            ?.let { renderer ->
+            .value?.let { renderer ->
                 val service: Service<*, *> = renderer
                     .device
                     .findService(UDAServiceType(AV_TRANSPORT))
@@ -275,7 +277,7 @@ class UpnpManagerImpl @Inject constructor(
                     is AudioItem,
                     is VideoItem,
                     -> updateChannel.emit(didlItem to service)
-                    is ImageItem -> upnpInnerStateChannel.emit(UpnpRendererState.Empty)
+                    is ImageItem -> _upnpRendererState.emit(UpnpRendererState.Empty)
                 }
                 Result.Success
             } ?: Result.Error.AvServiceNotFound
