@@ -1,12 +1,17 @@
 package com.m3sv.plainupnp.upnp.volume
 
-import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.*
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.GetVolumeAction
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.LowerVolumeAction
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.MuteVolumeAction
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.RaiseVolumeAction
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.SetVolumeAction
+import com.m3sv.plainupnp.upnp.actions.renderingcontrol.volume.Volume
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.fourthline.cling.model.meta.Service
 import javax.inject.Inject
 
-class VolumeRepository @Inject constructor(
+class VolumeManager @Inject constructor(
     private val raiseVolumeAction: RaiseVolumeAction,
     private val lowerVolumeAction: LowerVolumeAction,
     private val getVolumeAction: GetVolumeAction,
