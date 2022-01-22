@@ -26,12 +26,15 @@ class NotificationBuilder(private val context: Context) {
             createServerNotificationChannel()
         }
 
-        val builder = NotificationCompat.Builder(context, SERVER_NOTIFICATION_CHANNEL)
-        val title = context.resources.getString(R.string.notification_title)
+        val actionFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_ONE_SHOT
+        }
 
-        return builder
+        return NotificationCompat.Builder(context, SERVER_NOTIFICATION_CHANNEL)
             .setSmallIcon(R.drawable.small_icon)
-            .setContentTitle(applyBold(title))
+            .setContentTitle(applyBold(context.resources.getString(R.string.notification_title)))
             .setColor(ContextCompat.getColor(context, R.color.notification_color))
             .setContentText(context.resources.getText(R.string.notification_body))
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
@@ -47,7 +50,7 @@ class NotificationBuilder(private val context: Context) {
                     ).apply {
                         action = ACTION_EXIT
                     },
-                    PendingIntent.FLAG_ONE_SHOT
+                    actionFlags
                 )
             )
             .build()
