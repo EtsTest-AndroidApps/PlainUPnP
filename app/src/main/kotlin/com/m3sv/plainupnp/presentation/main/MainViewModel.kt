@@ -81,10 +81,6 @@ class MainViewModel @Inject constructor(
             initialValue = listOf()
         )
 
-    val upnpState: StateFlow<PlaybackState> = playbackManager
-        .playbackState
-        .stateIn(viewModelScope, SharingStarted.Eagerly, PlaybackState.Empty)
-
     private val itemClicks: MutableSharedFlow<ItemViewModel> = MutableSharedFlow()
     private val isSelectRendererButtonExpanded: MutableStateFlow<Boolean> = MutableStateFlow(false)
     private val isSelectRendererDialogExpanded = MutableStateFlow(false)
@@ -103,7 +99,7 @@ class MainViewModel @Inject constructor(
                 upnpManager.selectedRenderer
             ) { renderers, selectedRenderer ->
                 updateState { previousState ->
-                    val selectedRenderer = if (selectedRenderer != null) {
+                    val rendererModel = if (selectedRenderer != null) {
                         ViewState.RenderersState.RendererModel(selectedRenderer.identity, selectedRenderer.friendlyName)
                     } else {
                         null
@@ -111,13 +107,23 @@ class MainViewModel @Inject constructor(
 
                     val newRenderersState = previousState.renderersState.copy(
                         renderers = renderers
-                            .filter { it != selectedRenderer }
+                            .filter { it != rendererModel }
                             .toList(),
-                        selectedRenderer = selectedRenderer
+                        selectedRenderer = rendererModel
                     )
+
                     previousState.copy(renderersState = newRenderersState)
                 }
             }.collect()
+        }
+
+        viewModelScope.launch {
+            playbackManager
+                .playbackState
+                .onEach { newPlaybackState ->
+                    updateState { previousState -> previousState.copy(playbackState = newPlaybackState) }
+                }
+                .collect()
         }
 
         viewModelScope.launch {
@@ -165,39 +171,45 @@ class MainViewModel @Inject constructor(
                 orderBy,
                 order
             ) { folders, filterText, orderBy, order ->
-                var newContents = folders
-                    .last()
-                    .folderModel
-                    .contents
-                    .map { clingObject ->
-                        val type = clingObject.toItemType()
+                updateState { previousState ->
+                    var newContents = folders
+                        .last()
+                        .folderModel
+                        .contents
+                        .map { clingObject ->
+                            val type = clingObject.toItemType()
 
-                        val title = if (type == ItemType.CONTAINER) {
-                            clingObject.title.replace(UpnpContentRepositoryImpl.USER_DEFINED_PREFIX, "")
-                        } else {
-                            clingObject.title
+                            val title = if (type == ItemType.CONTAINER) {
+                                clingObject.title.replace(UpnpContentRepositoryImpl.USER_DEFINED_PREFIX, "")
+                            } else {
+                                clingObject.title
+                            }
+
+                            ItemViewModel(
+                                id = clingObject.id,
+                                title = title,
+                                type = type,
+                                uri = clingObject.uri,
+                            )
+                        }
+                        .filter { it.title.contains(filterText, ignoreCase = true) }
+
+                    newContents = when (orderBy) {
+                        ViewState.OrderBy.Alphabetically -> when (order) {
+                            ViewState.SortOrder.Ascending -> newContents.sortedBy { it.title.lowercase() }
+                            ViewState.SortOrder.Descending -> newContents.sortedByDescending { it.title.lowercase() }
                         }
 
-                        ItemViewModel(
-                            id = clingObject.id,
-                            title = title,
-                            type = type,
-                            uri = clingObject.uri
-                        )
-                    }
-                    .filter { it.title.contains(filterText, ignoreCase = true) }
+                        ViewState.OrderBy.Kind -> when (order) {
+                            ViewState.SortOrder.Ascending -> newContents.sortedBy { it.type }
+                            ViewState.SortOrder.Descending -> newContents.sortedByDescending { it.type }
+                        }
 
-                newContents = when (orderBy) {
-                    ViewState.OrderBy.Alphabetically -> when (order) {
-                        ViewState.SortOrder.Ascending -> newContents.sortedBy { it.title.lowercase() }
-                        ViewState.SortOrder.Descending -> newContents.sortedByDescending { it.title.lowercase() }
+                        ViewState.OrderBy.Default -> newContents
                     }
 
-                    ViewState.OrderBy.Default -> newContents
-                }
-                val folderContents = FolderContents.Contents(newContents)
+                    val folderContents = FolderContents.Contents(newContents)
 
-                updateState { previousState ->
                     previousState.copy(
                         folderContents = folderContents,
                         filterText = filterText,
@@ -318,6 +330,7 @@ class MainViewModel @Inject constructor(
 
     data class ViewState(
         val isSettingsDialogExpanded: Boolean,
+        val showControls: Boolean,
         val selectRendererState: SelectRendererState,
         val isLoading: Boolean,
         val lastPlayed: String?,
@@ -325,6 +338,7 @@ class MainViewModel @Inject constructor(
         val folderContents: FolderContents,
         val sortModel: SortModel,
         val filterText: String,
+        val playbackState: PlaybackState
     ) {
         data class RenderersState(
             val renderers: List<RendererModel>,
@@ -350,6 +364,7 @@ class MainViewModel @Inject constructor(
             // TODO support later
 //            Size(R.string.sort_by_size),
 //            Date(R.string.sort_by_date),
+            Kind(R.string.sort_by_kind),
             Default(R.string.sort_by_default)
         }
 
@@ -361,6 +376,7 @@ class MainViewModel @Inject constructor(
             fun empty() = ViewState(
                 isSettingsDialogExpanded = false,
                 isLoading = false,
+                showControls = false,
                 selectRendererState = SelectRendererState(
                     isSelectRendererButtonExpanded = false,
                     isSelectRendererDialogExpanded = false
@@ -374,6 +390,7 @@ class MainViewModel @Inject constructor(
                 ),
                 folderContents = FolderContents.Empty,
                 filterText = "",
+                playbackState = PlaybackState.Empty
             )
         }
     }

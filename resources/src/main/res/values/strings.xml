@@ -65,6 +65,8 @@
     <string name="enable_thumbnails_note">Enabling thumbnails might slow down your device, use carefully</string>
     <string name="sort_by_default">None</string>
     <string name="sort_by_alphabeticaly">Name</string>
+    <string name="sort_by_kind">Kind</string>
     <string name="sort_by_size">Size</string>
     <string name="grant_permission">Grant permission</string>
+    <string name="nothing_to_play">Nothing to play</string>
 </resources>

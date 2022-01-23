@@ -93,7 +93,7 @@ class UpnpPlaybackManager @Inject constructor(
                             if (transportInfo == null || positionInfo == null)
                                 return
 
-                            val state = PlaybackState.Default(
+                            val state = PlaybackState.Active(
                                 uri = uri,
                                 type = type,
                                 state = transportInfo.currentTransportState,

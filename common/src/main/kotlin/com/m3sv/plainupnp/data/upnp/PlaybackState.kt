@@ -3,8 +3,9 @@ package com.m3sv.plainupnp.data.upnp
 import org.fourthline.cling.support.model.TransportState
 
 sealed interface PlaybackState {
-    data class Default(
-        val uri: String,
+
+    data class Active(
+        val uri: String?,
         val type: UpnpItemType,
         var state: TransportState,
         val remainingDuration: String,
