@@ -18,6 +18,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,9 +76,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -218,7 +220,7 @@ class MainActivity : ComponentActivity() {
             val scaffoldState = rememberBottomSheetScaffoldState()
 
             val sheetPeekHeight = when {
-                configuration.isInPortrait -> 100.dp
+                configuration.isInPortrait -> 88.dp
                 else -> 0.dp
             }
 
@@ -259,21 +261,34 @@ class MainActivity : ComponentActivity() {
                                             && scaffoldState.bottomSheetState.currentValue == BottomSheetValue.Collapsed)
                                             || (scaffoldState.bottomSheetState.currentValue == BottomSheetValue.Expanded)
 
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 16.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(36.dp)
+                                            .height(4.dp)
+                                            .align(Alignment.Center)
+                                            .clip(RoundedCornerShape(32.dp))
+                                            .background(MaterialTheme.colors.onSurface.copy(alpha = 0.5f))
+                                    )
+                                }
+
                                 Crossfade(expanded, animationSpec = spring()) {
                                     if (it) {
                                         Controls(viewState.playbackState, modifier = Modifier.padding(32.dp))
                                     } else {
-                                        ControlsHeader(modifier = Modifier
-                                            .requiredHeight(100.dp)
+                                        ControlsHeader(viewState.playbackState, Modifier
+                                            .requiredHeight(sheetPeekHeight)
                                             .fillMaxWidth()
-                                            .pointerInteropFilter {
-                                                scope.launch {
-                                                    scaffoldState.bottomSheetState.expand()
-                                                }
-                                                true
-                                            }) {
-
-                                        }
+                                            .pointerInput(Unit) {
+                                                detectTapGestures(onPress = {
+                                                    scope.launch {
+                                                        scaffoldState.bottomSheetState.expand()
+                                                    }
+                                                })
+                                            })
                                     }
                                 }
                             }
@@ -328,10 +343,64 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun ControlsHeader(modifier: Modifier = Modifier, block: @Composable RowScope.() -> Unit) {
-        Row(modifier = modifier) {
-            block()
+    private fun ControlsHeader(playbackState: PlaybackState, modifier: Modifier = Modifier) {
+        when (playbackState) {
+            is PlaybackState.Active -> Row(
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = modifier.fillMaxWidth()
+            ) {
+                val sizeModifier = Modifier.size(42.dp)
+
+                IconButton(onClick = { viewModel.playerButtonClick(PlayerButton.PREVIOUS) }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_skip_previous),
+                        contentDescription = null,
+                        modifier = sizeModifier
+                    )
+                }
+
+                IconButton(onClick = {
+                    val button =
+                        if (playbackState.state == TransportState.PAUSED_PLAYBACK)
+                            PlayerButton.PLAY
+                        else
+                            PlayerButton.PAUSE
+
+                    viewModel.playerButtonClick(button)
+                }) {
+                    Icon(
+                        painter = painterResource(id = playbackState.icon),
+                        contentDescription = null,
+                        modifier = sizeModifier
+                    )
+                }
+
+                IconButton(onClick = { viewModel.playerButtonClick(PlayerButton.STOP) }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_stop),
+                        contentDescription = null,
+                        modifier = sizeModifier
+                    )
+                }
+
+                IconButton(onClick = { viewModel.playerButtonClick(PlayerButton.NEXT) }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_skip_next),
+                        contentDescription = null,
+                        modifier = sizeModifier
+                    )
+                }
+            }
+
+            PlaybackState.Empty -> Row(
+                modifier = modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.nothing_to_play), modifier = Modifier.padding(start = 24.dp))
+            }
         }
+
     }
 
     @Composable
@@ -747,7 +816,7 @@ class MainActivity : ComponentActivity() {
                         viewModel.playerButtonClick(button)
                     }) {
                         Icon(
-                            painter = painterResource(id = playbackState.icon ?: R.drawable.ic_play),
+                            painter = painterResource(id = playbackState.icon),
                             contentDescription = null,
                             modifier = sizeModifier
                         )
